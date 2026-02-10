@@ -1,0 +1,15 @@
+{
+    "azure_client_id": "YOUR_AZURE_APP_CLIENT_ID",
+    "azure_authority": "https://login.microsoftonline.com/common",
+    "graph_scopes": [
+        "Calendars.Read",
+        "Notes.Read",
+        "OnlineMeetingTranscript.Read.All",
+        "User.Read"
+    ],
+    "word_doc_directories": [
+        "C:\\Users\\YourUser\\Documents"
+    ],
+    "token_cache_path": "./config/token_cache.bin",
+    "database_path": "./backend/db.sqlite3"
+}

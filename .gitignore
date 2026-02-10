@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+venv/
+.env
+*.sqlite3
+token_cache.bin
+
+# Node/React
+node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+
+# Config (user-specific secrets)
+config/config.json
+
+# Logs
+backend/logs/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PyInstaller
+*.spec
