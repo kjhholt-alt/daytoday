@@ -97,6 +97,31 @@ class SearchView(APIView):
 
 class CollectView(APIView):
     def post(self, request):
+        # Validate config before attempting collection
+        try:
+            from .services.config_service import ConfigService
+            config = ConfigService.get_instance()
+        except Exception as e:
+            return Response(
+                {'detail': f'Configuration error: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate auth status
+        try:
+            from .services.auth_service import AuthService
+            auth = AuthService.get_instance()
+            if not auth.is_authenticated():
+                return Response(
+                    {'detail': 'Not authenticated. Please sign in via Settings first.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+        except Exception as e:
+            return Response(
+                {'detail': f'Authentication error: {str(e)}'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
         target_date_str = request.data.get('date')
         if target_date_str:
             target_date = parse_date(target_date_str)
