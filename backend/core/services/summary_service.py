@@ -8,6 +8,7 @@ from ..models import (
     DailySummary, Meeting, NoteReference, WordDocument, Recording,
 )
 from .config_service import ConfigService
+from .win32_outlook_service import OutlookCalendarService
 from .win32_onenote_service import OneNoteLocalService
 from .word_service import WordService
 from .recording_service import RecordingService
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 class SummaryService:
     def __init__(self):
         self._config = ConfigService.get_instance()
+
+        self._calendar = None
+        if self._config.outlook_enabled:
+            self._calendar = OutlookCalendarService()
 
         self._onenote = None
         if self._config.onenote_enabled:
@@ -62,22 +67,35 @@ class SummaryService:
 
         errors = []
 
-        # 1. Calendar events via Microsoft Graph API
-        if self._config.outlook_enabled and self._graph_calendar:
+        # 1. Calendar events  (COM first, Graph API fallback)
+        #    COM reads directly from Classic Outlook — no auth required.
+        #    Graph API is the fallback for New Outlook / Web users.
+        calendar_done = False
+
+        if self._config.outlook_enabled and self._calendar:
+            try:
+                events = self._calendar.get_events_for_date(target_date)
+                if events:
+                    self._store_meetings(summary, events)
+                    logger.info(f"Stored {len(events)} meeting(s) via COM.")
+                    calendar_done = True
+            except Exception as e:
+                logger.warning(f"COM calendar failed: {e}")
+
+        if not calendar_done and self._config.outlook_enabled and self._graph_calendar:
             try:
                 events = self._graph_calendar.get_events_for_date(target_date)
                 if events:
                     self._store_meetings(summary, events)
                     logger.info(f"Stored {len(events)} meeting(s) via Graph API.")
+                    calendar_done = True
             except Exception as e:
                 logger.error(f"Graph calendar failed: {e}", exc_info=True)
                 errors.append(f"Calendar: {e}")
-        elif self._config.outlook_enabled:
-            logger.warning(
-                "Calendar enabled but Graph API not authenticated. "
-                "Sign in via Settings to collect calendar events."
-            )
-        else:
+
+        if not calendar_done and self._config.outlook_enabled:
+            logger.info("Calendar: no events found or no source available.")
+        elif not self._config.outlook_enabled:
             logger.info("Calendar collection disabled in config.")
 
         # 2. OneNote pages

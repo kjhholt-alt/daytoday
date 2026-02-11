@@ -63,6 +63,7 @@ a = Analysis(
         'core.services',
         'core.services.config_service',
         'core.services.summary_service',
+        'core.services.win32_outlook_service',
         'core.services.win32_onenote_service',
         'core.services.word_service',
         'core.services.recording_service',
