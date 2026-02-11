@@ -7,5 +7,7 @@
     "onenote_enabled": true,
     "onenote_paths": [],
     "onenote_notebooks": [],
-    "graph_client_id": ""
+    "graph_client_id": "",
+    "calendar_source": "auto",
+    "power_automate_export_path": ""
 }

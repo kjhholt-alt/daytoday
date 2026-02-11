@@ -12,6 +12,7 @@ from .views import (
     OpenNoteView,
     AttendeeSearchView,
     AttendeeTopView,
+    CalendarImportView,
 )
 
 router = DefaultRouter()
@@ -27,6 +28,7 @@ urlpatterns = [
     path('auth/logout/', GraphAuthLogoutView.as_view(), name='auth-logout'),
     path('config/', SaveConfigView.as_view(), name='save-config'),
     path('notes/<uuid:note_id>/open/', OpenNoteView.as_view(), name='open-note'),
+    path('calendar/import/', CalendarImportView.as_view(), name='calendar-import'),
     path('attendees/', AttendeeSearchView.as_view(), name='attendee-search'),
     path('attendees/top/', AttendeeTopView.as_view(), name='attendee-top'),
 ]

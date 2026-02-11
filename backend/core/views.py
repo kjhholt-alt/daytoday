@@ -153,14 +153,22 @@ class StatusView(APIView):
             'outlook_enabled': False,
             'onenote_enabled': False,
             'onenote_notebooks': [],
+            'calendar_source': 'auto',
+            'power_automate_export_path': '',
         }
+        pa_status = {}
         try:
             from .services.config_service import ConfigService
+            from .services.power_automate_calendar_service import PowerAutomateCalendarService
             config = ConfigService.get_instance()
             config_info['word_doc_directories'] = getattr(config, 'word_doc_directories', [])
             config_info['outlook_enabled'] = getattr(config, 'outlook_enabled', False)
             config_info['onenote_enabled'] = getattr(config, 'onenote_enabled', False)
             config_info['onenote_notebooks'] = getattr(config, 'onenote_notebooks', [])
+            config_info['calendar_source'] = getattr(config, 'calendar_source', 'auto')
+            config_info['power_automate_export_path'] = getattr(config, 'power_automate_export_path', '')
+            pa_service = PowerAutomateCalendarService(config.power_automate_export_path)
+            pa_status = pa_service.get_status()
         except Exception:
             pass
 
@@ -184,6 +192,9 @@ class StatusView(APIView):
             'onenote_enabled': config_info['onenote_enabled'],
             'word_doc_directories': config_info['word_doc_directories'],
             'onenote_notebooks': config_info['onenote_notebooks'],
+            'calendar_source': config_info['calendar_source'],
+            'power_automate_export_path': config_info['power_automate_export_path'],
+            'power_automate_status': pa_status,
             'graph_enabled': graph_auth_info['graph_enabled'],
             'graph_authenticated': graph_auth_info['graph_authenticated'],
             'graph_account': graph_auth_info['graph_account'],
@@ -293,7 +304,8 @@ class SaveConfigView(APIView):
             # Update allowed fields
             allowed = ['word_doc_directories',
                        'recordings_directories', 'onenote_paths',
-                       'onenote_notebooks']
+                       'onenote_notebooks', 'calendar_source',
+                       'power_automate_export_path']
             updated = []
             for key in allowed:
                 if key in request.data:
@@ -382,6 +394,50 @@ class OpenNoteView(APIView):
             {'detail': 'No link available for this note.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
+class CalendarImportView(APIView):
+    """POST /api/calendar/import/ - Accept calendar events from Power Automate."""
+
+    def post(self, request):
+        from .services.config_service import ConfigService
+        from .services.power_automate_calendar_service import PowerAutomateCalendarService
+
+        events = request.data.get('events')
+        if not events or not isinstance(events, list):
+            return Response(
+                {'detail': 'Request body must contain an "events" list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_date_str = request.data.get('date')
+        target_date = parse_date(target_date_str) if target_date_str else date.today()
+
+        config = ConfigService.get_instance()
+        pa_service = PowerAutomateCalendarService(config.power_automate_export_path)
+
+        try:
+            filepath = pa_service.write_events(events, target_date)
+            return Response({
+                'detail': f'Imported {len(events)} event(s)',
+                'count': len(events),
+                'file': filepath,
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.error("Calendar import failed: %s", e, exc_info=True)
+            return Response(
+                {'detail': f'Import failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def get(self, request):
+        """GET /api/calendar/import/ - Return Power Automate calendar status."""
+        from .services.config_service import ConfigService
+        from .services.power_automate_calendar_service import PowerAutomateCalendarService
+
+        config = ConfigService.get_instance()
+        pa_service = PowerAutomateCalendarService(config.power_automate_export_path)
+        return Response(pa_service.get_status())
 
 
 class AttendeeSearchView(APIView):

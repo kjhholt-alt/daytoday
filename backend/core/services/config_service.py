@@ -66,6 +66,8 @@ DEFAULT_CONFIG = {
     'onenote_paths': [],          # empty list means "use auto-detected defaults"
     'onenote_notebooks': [],      # empty list means "include all notebooks"
     'outlook_enabled': True,
+    'calendar_source': 'auto',    # "auto", "com", "power_automate", "graph"
+    'power_automate_export_path': '',  # empty = auto-detect OneDrive/DayToDay
 }
 
 
@@ -185,4 +187,15 @@ class ConfigService:
     def outlook_enabled(self):
         return self._config.get('outlook_enabled', True)
 
+    @property
+    def calendar_source(self) -> str:
+        """Calendar source preference: 'auto', 'com', 'power_automate', 'graph'."""
+        return self._config.get('calendar_source', 'auto')
 
+    @property
+    def power_automate_export_path(self) -> str:
+        """Directory where Power Automate writes calendar JSON exports.
+
+        Empty string means auto-detect OneDrive/DayToDay folder.
+        """
+        return self._config.get('power_automate_export_path', '')

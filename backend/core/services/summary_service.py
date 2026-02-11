@@ -15,6 +15,7 @@ from .recording_service import RecordingService
 from .auth_service import GraphAuthService
 from .graph_calendar_service import GraphCalendarService
 from .graph_onenote_service import GraphOneNoteService
+from .power_automate_calendar_service import PowerAutomateCalendarService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ class SummaryService:
         self._onenote = None
         if self._config.onenote_enabled:
             self._onenote = OneNoteLocalService()
+
+        # Power Automate calendar bridge
+        self._pa_calendar = PowerAutomateCalendarService(
+            self._config.power_automate_export_path
+        )
 
         # Graph API auth -- always initialised (built-in client ID requires
         # no Azure app registration).  Calendar and OneNote Graph services
@@ -67,31 +73,26 @@ class SummaryService:
 
         errors = []
 
-        # 1. Calendar events  (COM first, Graph API fallback)
-        #    COM reads directly from Classic Outlook — no auth required.
-        #    Graph API is the fallback for New Outlook / Web users.
+        # 1. Calendar events — source determined by calendar_source config.
+        #    "auto": COM -> Power Automate -> Graph (try all in order)
+        #    "com" / "power_automate" / "graph": use only that source
         calendar_done = False
+        calendar_source = self._config.calendar_source
+        calendar_used = None
 
-        if self._config.outlook_enabled and self._calendar:
-            try:
-                events = self._calendar.get_events_for_date(target_date)
-                if events:
-                    self._store_meetings(summary, events)
-                    logger.info(f"Stored {len(events)} meeting(s) via COM.")
-                    calendar_done = True
-            except Exception as e:
-                logger.warning(f"COM calendar failed: {e}")
-
-        if not calendar_done and self._config.outlook_enabled and self._graph_calendar:
-            try:
-                events = self._graph_calendar.get_events_for_date(target_date)
-                if events:
-                    self._store_meetings(summary, events)
-                    logger.info(f"Stored {len(events)} meeting(s) via Graph API.")
-                    calendar_done = True
-            except Exception as e:
-                logger.error(f"Graph calendar failed: {e}", exc_info=True)
-                errors.append(f"Calendar: {e}")
+        if self._config.outlook_enabled:
+            sources = self._get_calendar_sources(calendar_source)
+            for source_name, source_fn in sources:
+                try:
+                    events = source_fn(target_date)
+                    if events:
+                        self._store_meetings(summary, events)
+                        logger.info(f"Stored {len(events)} meeting(s) via {source_name}.")
+                        calendar_done = True
+                        calendar_used = source_name
+                        break
+                except Exception as e:
+                    logger.warning(f"{source_name} calendar failed: {e}")
 
         if not calendar_done and self._config.outlook_enabled:
             logger.info("Calendar: no events found or no source available.")
@@ -150,6 +151,29 @@ class SummaryService:
             f"for {target_date}."
         )
         return summary
+
+    def _get_calendar_sources(self, calendar_source: str):
+        """Return an ordered list of (name, callable) calendar sources."""
+        all_sources = []
+
+        if self._calendar:
+            all_sources.append(("COM", self._calendar.get_events_for_date))
+        if self._pa_calendar and self._pa_calendar.available:
+            all_sources.append(("Power Automate", self._pa_calendar.get_events_for_date))
+        if self._graph_calendar:
+            all_sources.append(("Graph API", self._graph_calendar.get_events_for_date))
+
+        if calendar_source == "auto":
+            return all_sources
+        elif calendar_source == "com":
+            return [(n, fn) for n, fn in all_sources if n == "COM"]
+        elif calendar_source == "power_automate":
+            return [(n, fn) for n, fn in all_sources if n == "Power Automate"]
+        elif calendar_source == "graph":
+            return [(n, fn) for n, fn in all_sources if n == "Graph API"]
+        else:
+            logger.warning(f"Unknown calendar_source '{calendar_source}', using auto.")
+            return all_sources
 
     @staticmethod
     def _is_valid_datetime(value):

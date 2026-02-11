@@ -37,6 +37,10 @@ export const saveConfig = (data) => api.post('/config/', data);
 // Notes
 export const openNote = (noteId) => api.post(`/notes/${noteId}/open/`);
 
+// Calendar import (Power Automate)
+export const getCalendarImportStatus = () => api.get('/calendar/import/');
+export const importCalendarEvents = (events, date) => api.post('/calendar/import/', { events, date });
+
 // Attendees
 export const searchAttendees = (query) => api.get(`/attendees/?q=${encodeURIComponent(query)}`);
 export const getTopAttendees = (limit = 20) => api.get(`/attendees/top/?limit=${limit}`);
