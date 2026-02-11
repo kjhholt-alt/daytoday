@@ -13,6 +13,7 @@ calendar data and writes the results as a JSON file.
 import json
 import logging
 import os
+import re as _re
 import glob as _glob
 from datetime import date, datetime
 
@@ -189,6 +190,23 @@ class PowerAutomateCalendarService:
         else:
             location = str(location_raw)
 
+        # Extract the full meeting body (agenda/description) when available.
+        # PA / Graph returns body as {"contentType": "html", "content": "..."}
+        # We prefer the full body over the truncated bodyPreview.
+        body_raw = event.get("body", {})
+        if isinstance(body_raw, dict) and body_raw.get("content"):
+            # Strip HTML tags to get plain text
+            body_text = _re.sub(r'<[^>]+>', ' ', body_raw["content"])
+            body_text = _re.sub(r'\s+', ' ', body_text).strip()
+        else:
+            body_text = ""
+
+        body_preview = (
+            body_text
+            or event.get("body_preview")
+            or event.get("bodyPreview", "")
+        )
+
         return {
             "graph_id": event.get("graph_id") or event.get("id", "pa-import"),
             "subject": event.get("subject", "Untitled"),
@@ -198,7 +216,7 @@ class PowerAutomateCalendarService:
             "organizer_name": organizer_name,
             "organizer_email": organizer_email,
             "attendees": attendees,
-            "body_preview": event.get("body_preview") or event.get("bodyPreview", ""),
+            "body_preview": body_preview,
             "location": location,
             "is_online_meeting": event.get("is_online_meeting", False)
                 or event.get("isOnlineMeeting", False),
