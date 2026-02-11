@@ -96,6 +96,8 @@ a = Analysis(
         'dateutil.parser',
         # dotenv
         'dotenv',
+        # PyPDF2
+        'PyPDF2',
     ],
     hookspath=[],
     hooksconfig={},

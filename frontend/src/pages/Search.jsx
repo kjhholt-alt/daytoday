@@ -31,11 +31,14 @@ import {
 import dayjs from 'dayjs';
 import { search, openNote } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+import NoteDetailDialog from '../components/NoteDetailDialog';
 
-function NoteSearchItem({ note }) {
+function NoteSearchItem({ note, searchQuery }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [highlightText, setHighlightText] = useState('');
   const hasContent = note.content_snippet && note.content_snippet.trim().length > 0;
 
   const handleOpenNote = async (e) => {
@@ -57,8 +60,38 @@ function NoteSearchItem({ note }) {
     setExpanded(!expanded);
   };
 
-  // Get the date from the daily_summary for navigation
+  const handleLineClick = (lineText) => {
+    setHighlightText(lineText);
+    setDialogOpen(true);
+  };
+
   const noteDate = note.daily_summary?.date;
+
+  const renderContentLines = () => {
+    if (!note.content_snippet) return null;
+    const lines = note.content_snippet.split('\n').filter((l) => l.trim());
+    return lines.map((line, i) => (
+      <Typography
+        key={i}
+        variant="body2"
+        onClick={(e) => { e.stopPropagation(); handleLineClick(line.trim()); }}
+        sx={{
+          cursor: 'pointer',
+          py: 0.3,
+          px: 0.5,
+          borderRadius: 0.5,
+          fontSize: '0.85rem',
+          lineHeight: 1.6,
+          '&:hover': {
+            bgcolor: 'primary.main',
+            color: 'primary.contrastText',
+          },
+        }}
+      >
+        {line}
+      </Typography>
+    ));
+  };
 
   return (
     <>
@@ -120,24 +153,21 @@ function NoteSearchItem({ note }) {
                 borderRadius: 1,
                 borderLeft: 3,
                 borderColor: 'primary.main',
+                maxHeight: 300,
+                overflow: 'auto',
               }}
             >
-              <Typography
-                variant="body2"
-                sx={{
-                  whiteSpace: 'pre-line',
-                  maxHeight: 300,
-                  overflow: 'auto',
-                  fontSize: '0.85rem',
-                  lineHeight: 1.6,
-                }}
-              >
-                {note.content_snippet}
-              </Typography>
+              {renderContentLines()}
             </Box>
           </Collapse>
         )}
       </ListItem>
+      <NoteDetailDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        note={note}
+        highlightText={highlightText}
+      />
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}
@@ -239,7 +269,7 @@ export default function Search() {
             <Paper variant="outlined">
               <List>
                 {(results.notes || []).map((n) => (
-                  <NoteSearchItem key={n.id} note={n} />
+                  <NoteSearchItem key={n.id} note={n} searchQuery={query} />
                 ))}
                 {(!results.notes || results.notes.length === 0) && (
                   <ListItem>
