@@ -147,12 +147,6 @@ class CollectView(APIView):
 
 class StatusView(APIView):
     def get(self, request):
-        # NOTE: COM availability checks are skipped because New Outlook
-        # blocks COM Dispatch() calls indefinitely (holds GIL).
-        # COM status is determined at collection time via try/except.
-        outlook_available = False
-        onenote_available = False
-
         # Get config info
         config_info = {
             'word_doc_directories': [],
@@ -186,8 +180,6 @@ class StatusView(APIView):
             pass
 
         return Response({
-            'outlook_available': outlook_available,
-            'onenote_available': onenote_available,
             'outlook_enabled': config_info['outlook_enabled'],
             'onenote_enabled': config_info['onenote_enabled'],
             'word_doc_directories': config_info['word_doc_directories'],
@@ -347,7 +339,23 @@ class OpenNoteView(APIView):
         if note.web_url:
             return Response({'action': 'open_url', 'url': note.web_url})
 
-        # For file-based notes, open the .one file directly
+        # Try COM navigation to the specific page by title
+        if note.page_title:
+            try:
+                from .services.win32_onenote_service import OneNoteLocalService
+                onenote = OneNoteLocalService()
+                section_file = None
+                if note.page_graph_id and note.page_graph_id.startswith('file://'):
+                    section_file = note.page_graph_id[len('file://'):]
+                if onenote.navigate_to_page_by_title(note.page_title, section_file):
+                    return Response({
+                        'action': 'navigated',
+                        'detail': f'Navigated to "{note.page_title}" in OneNote.',
+                    })
+            except Exception as e:
+                logger.debug("COM navigation failed, falling back: %s", e)
+
+        # Fallback: open the .one section file
         if note.page_graph_id and note.page_graph_id.startswith('file://'):
             file_path = note.page_graph_id[len('file://'):]
             if os.path.isfile(file_path):
@@ -356,7 +364,7 @@ class OpenNoteView(APIView):
                         os.startfile(file_path)
                     return Response({
                         'action': 'opened_local',
-                        'detail': f'Opened {os.path.basename(file_path)} in OneNote.',
+                        'detail': f'Opened "{note.page_title}" section in OneNote.',
                     })
                 except Exception as e:
                     logger.error("Failed to open note file: %s", e)

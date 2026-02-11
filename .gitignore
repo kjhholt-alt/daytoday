@@ -9,7 +9,8 @@ venv/
 .env
 *.sqlite3
 db.sqlite3
-token_cache.bin
+*token_cache*.bin
+*.zip
 
 # Node/React
 node_modules/

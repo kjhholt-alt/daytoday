@@ -32,7 +32,7 @@ import dayjs from 'dayjs';
 import { search, openNote } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-function NoteSearchItem({ note, searchQuery }) {
+function NoteSearchItem({ note }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
@@ -183,7 +183,6 @@ export default function Search() {
       const res = await search(query.trim());
       setResults(res.data);
     } catch (err) {
-      console.error('Search failed:', err);
     } finally {
       setLoading(false);
     }
@@ -255,7 +254,7 @@ export default function Search() {
             <Paper variant="outlined">
               <List>
                 {(results.notes || []).map((n) => (
-                  <NoteSearchItem key={n.id} note={n} searchQuery={query} />
+                  <NoteSearchItem key={n.id} note={n} />
                 ))}
                 {(!results.notes || results.notes.length === 0) && (
                   <ListItem>

@@ -36,7 +36,6 @@ export default function History() {
         const count = res.data.count || 0;
         setTotalPages(Math.ceil(count / 20));
       } catch (err) {
-        console.error('Failed to load history:', err);
       } finally {
         setLoading(false);
       }

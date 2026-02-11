@@ -8,8 +8,7 @@ class TranscriptSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transcript
         fields = [
-            'id', 'transcript_graph_id', 'content_vtt',
-            'content_plain', 'created_at',
+            'id', 'content_vtt', 'content_plain', 'created_at',
         ]
 
 
@@ -33,7 +32,7 @@ class NoteReferenceSerializer(serializers.ModelSerializer):
         model = NoteReference
         fields = [
             'id', 'notebook_name', 'section_name', 'page_title',
-            'page_graph_id', 'content_snippet', 'content_text',
+            'content_snippet', 'content_text',
             'changes_summary', 'change_type', 'web_url', 'last_modified',
             'daily_summary',
         ]

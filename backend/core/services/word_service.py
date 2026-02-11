@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 
 from docx import Document
@@ -30,9 +30,8 @@ class WordService:
                     if file_path.name.startswith('~$'):
                         continue
                     try:
-                        mod_time = datetime.fromtimestamp(
-                            file_path.stat().st_mtime
-                        )
+                        stat_result = file_path.stat()
+                        mod_time = datetime.fromtimestamp(stat_result.st_mtime)
                     except OSError as e:
                         logger.warning(f"Cannot stat {file_path}: {e}")
                         continue
@@ -48,7 +47,7 @@ class WordService:
                         'file_path': str(file_path),
                         'file_name': file_path.name,
                         'modified_at': mod_time.isoformat(),
-                        'size_bytes': file_path.stat().st_size,
+                        'size_bytes': stat_result.st_size,
                     })
 
         logger.info(f"Found {len(documents)} document(s) (.docx + .pdf).")

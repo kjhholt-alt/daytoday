@@ -20,9 +20,6 @@ else:
 CONFIG_FILE = CONFIG_DIR / 'config.json'
 TEMPLATE_FILE = PROJECT_ROOT / 'config' / 'config.template.json'
 
-REQUIRED_KEYS = []
-
-
 def _default_onenote_paths() -> list:
     """
     Build a list of default directories where OneNote notebooks are commonly
@@ -189,7 +186,4 @@ class ConfigService:
     def outlook_enabled(self):
         return self._config.get('outlook_enabled', True)
 
-    @property
-    def graph_client_id(self):
-        return self._config.get('graph_client_id', '')
 

@@ -31,11 +31,6 @@ export const search = (query) => api.get(`/search/?q=${encodeURIComponent(query)
 export const triggerCollection = (date) => api.post('/collect/', { date });
 export const getStatus = () => api.get('/status/');
 
-// Graph authentication
-export const getAuthStatus = () => api.get('/auth/status/');
-export const loginGraph = () => api.post('/auth/login/');
-export const logoutGraph = () => api.post('/auth/logout/');
-
 // Config
 export const saveConfig = (data) => api.post('/config/', data);
 
@@ -46,4 +41,3 @@ export const openNote = (noteId) => api.post(`/notes/${noteId}/open/`);
 export const searchAttendees = (query) => api.get(`/attendees/?q=${encodeURIComponent(query)}`);
 export const getTopAttendees = (limit = 20) => api.get(`/attendees/top/?limit=${limit}`);
 
-export default api;

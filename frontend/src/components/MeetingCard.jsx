@@ -24,9 +24,6 @@ import {
   OpenInNew as OpenInNewIcon,
   Group as GroupIcon,
   AccessTime as AccessTimeIcon,
-  CheckCircleOutline as AcceptedIcon,
-  HelpOutline as TentativeIcon,
-  CancelOutlined as DeclinedIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -65,29 +62,6 @@ function getMeetingStatus(startStr, endStr) {
   return { label: 'In Progress', color: 'success' };
 }
 
-function getUserResponse(attendeesJson) {
-  if (!attendeesJson || attendeesJson.length === 0) return null;
-  // The current user is typically the organizer or the one with a 'self' flag.
-  // Graph API attendees have type/response. Look for common indicators.
-  // Typically Graph API marks the user's response. Check for response values.
-  const selfAttendee = attendeesJson.find(
-    (a) => a.type === 'self' || a.is_self === true
-  );
-  if (selfAttendee && selfAttendee.response) {
-    return selfAttendee.response;
-  }
-  // If there's no explicit self marker, check if there is a response field
-  // on the first attendee (sometimes the user is listed first)
-  return null;
-}
-
-const responseConfig = {
-  accepted: { label: 'Accepted', icon: <AcceptedIcon sx={{ fontSize: 14 }} />, color: 'success' },
-  tentativelyAccepted: { label: 'Tentative', icon: <TentativeIcon sx={{ fontSize: 14 }} />, color: 'warning' },
-  tentative: { label: 'Tentative', icon: <TentativeIcon sx={{ fontSize: 14 }} />, color: 'warning' },
-  declined: { label: 'Declined', icon: <DeclinedIcon sx={{ fontSize: 14 }} />, color: 'error' },
-};
-
 export default function MeetingCard({ meeting }) {
   const navigate = useNavigate();
   const startTime = formatTime(meeting.start_time);
@@ -95,8 +69,6 @@ export default function MeetingCard({ meeting }) {
   const hasTranscripts = meeting.transcripts && meeting.transcripts.length > 0;
   const duration = getMeetingDuration(meeting.start_time, meeting.end_time);
   const attendeeCount = meeting.attendees_json?.length || 0;
-  const userResponse = getUserResponse(meeting.attendees_json);
-  const responseInfo = userResponse ? responseConfig[userResponse] : null;
 
   const [meetingStatus, setMeetingStatus] = useState(
     getMeetingStatus(meeting.start_time, meeting.end_time)
@@ -147,18 +119,6 @@ export default function MeetingCard({ meeting }) {
                   color={meetingStatus.color}
                   variant={meetingStatus.label === 'Completed' ? 'outlined' : 'filled'}
                   sx={{ fontWeight: 500, fontSize: '0.7rem', height: 22 }}
-                />
-              )}
-
-              {/* User response status */}
-              {responseInfo && (
-                <Chip
-                  icon={responseInfo.icon}
-                  label={responseInfo.label}
-                  size="small"
-                  color={responseInfo.color}
-                  variant="outlined"
-                  sx={{ fontSize: '0.7rem', height: 22 }}
                 />
               )}
 

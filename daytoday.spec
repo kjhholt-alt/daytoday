@@ -16,8 +16,6 @@ Build with:
 import os
 from pathlib import Path
 
-block_cipher = None
-
 # Project paths
 PROJECT_ROOT = os.path.dirname(os.path.abspath(SPEC))
 BACKEND_DIR = os.path.join(PROJECT_ROOT, 'backend')
@@ -32,7 +30,6 @@ a = Analysis(
         # Django backend code
         (os.path.join(BACKEND_DIR, 'core'), os.path.join('backend', 'core')),
         (os.path.join(BACKEND_DIR, 'daytoday_project'), os.path.join('backend', 'daytoday_project')),
-        (os.path.join(BACKEND_DIR, 'tests'), os.path.join('backend', 'tests')),
         # React frontend build
         (FRONTEND_BUILD, os.path.join('frontend', 'build')),
         # Config template
@@ -76,7 +73,6 @@ a = Analysis(
         'core.services.graph_onenote_service',
         'core.services.calendar_service',
         'core.services.onenote_service',
-        'core.services.teams_service',
         'core.management',
         'core.management.commands',
         'core.management.commands.collect_today',
@@ -113,11 +109,11 @@ a = Analysis(
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    cipher=block_cipher,
+    ,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data, )
 
 exe = EXE(
     pyz,

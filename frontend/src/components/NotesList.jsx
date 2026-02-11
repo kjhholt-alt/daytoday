@@ -149,20 +149,19 @@ function NoteItem({ note }) {
             }
             secondary={
               <Box component="span" sx={{ display: 'block' }}>
-                {[note.notebook_name, note.section_name]
-                  .filter(Boolean)
-                  .join(' > ') && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    component="span"
-                    sx={{ display: 'block' }}
-                  >
-                    {[note.notebook_name, note.section_name]
-                      .filter(Boolean)
-                      .join(' > ')}
-                  </Typography>
-                )}
+                {(() => {
+                  const breadcrumb = [note.notebook_name, note.section_name].filter(Boolean).join(' > ');
+                  return breadcrumb ? (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      component="span"
+                      sx={{ display: 'block' }}
+                    >
+                      {breadcrumb}
+                    </Typography>
+                  ) : null;
+                })()}
                 {note.changes_summary &&
                   note.change_type !== 'unchanged' && (
                     <Typography

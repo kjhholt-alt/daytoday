@@ -283,22 +283,11 @@ export default function DailySummary() {
                 lineHeight: 1.4,
                 color: 'text.primary',
               },
-              '& h4': {
-                fontSize: '1rem',
-                fontWeight: 600,
-                mt: 1.5,
-                mb: 0.5,
-                color: 'text.primary',
-              },
               '& p': {
                 fontSize: '0.875rem',
                 lineHeight: 1.6,
                 mb: 1,
                 color: 'text.secondary',
-              },
-              '& ul, & ol': {
-                pl: 2.5,
-                mb: 1,
               },
               '& li': {
                 fontSize: '0.875rem',
@@ -311,45 +300,6 @@ export default function DailySummary() {
                 color: 'text.primary',
               },
               '& em': {
-                fontStyle: 'italic',
-              },
-              '& hr': {
-                border: 'none',
-                borderTop: '1px solid',
-                borderColor: 'divider',
-                my: 2,
-              },
-              '& code': {
-                fontFamily: 'monospace',
-                fontSize: '0.8rem',
-                bgcolor: 'grey.100',
-                px: 0.5,
-                py: 0.25,
-                borderRadius: 0.5,
-              },
-              '& pre': {
-                bgcolor: 'grey.100',
-                p: 1.5,
-                borderRadius: 1,
-                overflow: 'auto',
-                mb: 1,
-              },
-              '& pre code': {
-                bgcolor: 'transparent',
-                px: 0,
-                py: 0,
-              },
-              '& a': {
-                color: 'primary.main',
-                textDecoration: 'underline',
-              },
-              '& blockquote': {
-                borderLeft: '3px solid',
-                borderColor: 'primary.main',
-                pl: 2,
-                ml: 0,
-                my: 1,
-                color: 'text.secondary',
                 fontStyle: 'italic',
               },
               '& > *:first-of-type': {

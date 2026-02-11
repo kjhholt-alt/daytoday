@@ -73,7 +73,7 @@ class SummaryService:
         calendar_done = False
 
         # Try COM (Classic Outlook) first - gives most complete data
-        if self._calendar and not calendar_done:
+        if self._calendar:
             try:
                 events = self._calendar.get_events_for_date(target_date)
                 if events:

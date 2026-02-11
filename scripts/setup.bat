@@ -88,7 +88,6 @@ REM Run Django migrations
 echo [6/6] Running database migrations...
 cd /d "%BACKEND_DIR%"
 python manage.py migrate --run-syncdb -q 2>nul
-python manage.py migrate -q
 echo    Database ready.
 
 echo.

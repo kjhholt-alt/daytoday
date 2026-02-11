@@ -231,26 +231,51 @@ class OneNoteLocalService:
     # Hierarchy retrieval (COM path)
     # ------------------------------------------------------------------
 
-    def _get_hierarchy_xml(self) -> ET.Element:
+    @staticmethod
+    def _call_get_hierarchy_on_app(app):
+        """Try multiple strategies to call GetHierarchy on a COM app object.
+
+        Returns the XML string on success, or None if all strategies fail.
         """
-        Fetch the full Notebook -> Section -> Page hierarchy from OneNote
-        and return the parsed XML root element.
-        """
-        app = self._get_app()
+        # Strategy 1: Direct call (works with early-bound dispatch)
         try:
-            xml_str = app.GetHierarchy("", HS_PAGES)
+            result = app.GetHierarchy("", HS_PAGES)
+            if result:
+                logger.debug("GetHierarchy succeeded (direct call)")
+                return result
         except Exception as exc:
-            logger.error("GetHierarchy failed: %s", exc)
-            raise RuntimeError(f"OneNote GetHierarchy call failed: {exc}")
+            logger.debug("GetHierarchy direct call failed: %s", exc)
 
+        # Strategy 2: Low-level InvokeTypes (bypasses late-binding issues
+        # with [out] BSTR* parameters)
         try:
-            root = ET.fromstring(xml_str)
-        except ET.ParseError as exc:
-            logger.error("Failed to parse OneNote hierarchy XML: %s", exc)
-            raise RuntimeError(f"Could not parse hierarchy XML: {exc}")
+            oleobj = app._oleobj_
+            dispid = oleobj.GetIDsOfNames(0, 'GetHierarchy')
+            if isinstance(dispid, tuple):
+                dispid = dispid[0]
+            result = oleobj.InvokeTypes(
+                dispid, 0, 1,           # dispid, lcid, DISPATCH_METHOD
+                (8, 0),                  # return type: VT_BSTR
+                ((8, 1), (3, 1)),        # arg types: (BSTR in, I4 in)
+                "", HS_PAGES,
+            )
+            if result:
+                logger.debug("GetHierarchy succeeded (InvokeTypes)")
+                return result
+        except Exception as exc:
+            logger.debug("GetHierarchy InvokeTypes failed: %s", exc)
 
-        self._detect_namespace(root)
-        return root
+        # Strategy 3: Three-arg call (pass empty string for [out] param)
+        try:
+            result = app.GetHierarchy("", HS_PAGES, "")
+            if result:
+                logger.debug("GetHierarchy succeeded (3-arg call)")
+                return result
+        except Exception as exc:
+            logger.debug("GetHierarchy 3-arg call failed: %s", exc)
+
+        logger.error("All GetHierarchy strategies failed")
+        return None
 
     # ------------------------------------------------------------------
     # File-based fallback helpers
@@ -532,6 +557,214 @@ class OneNoteLocalService:
             logger.debug("GetHyperlinkToObject failed for %s: %s", page_id, exc)
             return ""
 
+    def navigate_to_page_by_title(
+        self, page_title: str, section_file: Optional[str] = None
+    ) -> bool:
+        """Navigate OneNote to a specific page by its title.
+
+        Uses PowerShell as a COM bridge because pywin32 cannot handle
+        OneNote's ``[out] BSTR*`` parameters in late-binding mode.
+
+        Strategy:
+        1. ``FindPages`` to search for the page by title (returns page IDs).
+        2. Match the best page (prefer pages in the matching section).
+        3. ``NavigateTo`` with the page ID.
+        4. If no page match, navigate to the section instead.
+
+        Parameters
+        ----------
+        page_title:
+            Exact page title (or section name) to navigate to.
+        section_file:
+            Optional path to the ``.one`` section file.  Used to
+            narrow the search when multiple pages share the same title.
+
+        Returns
+        -------
+        bool
+            True if OneNote was successfully navigated.
+        """
+        import sys
+
+        if sys.platform != "win32":
+            return False
+
+        # Determine target section name for matching
+        target_section = None
+        if section_file:
+            target_section = Path(section_file).stem
+            target_section = _BACKUP_DATE_PATTERN.sub("", target_section)
+
+        # --- Step 1: Use FindPages to search for a page by title ---
+        page_id = self._ps_find_and_match_page(page_title, target_section)
+
+        if page_id:
+            # --- Step 2: Navigate to the page ---
+            if self._ps_navigate_to(page_id):
+                logger.info("Navigated OneNote to page '%s'", page_title)
+                return True
+
+        # --- Step 3: Fallback - navigate to the section by name ---
+        section_id = self._ps_find_section_id(page_title)
+        if section_id:
+            if self._ps_navigate_to(section_id):
+                logger.info(
+                    "Navigated OneNote to section '%s'", page_title
+                )
+                return True
+
+        logger.debug(
+            "Could not navigate OneNote to '%s'", page_title
+        )
+        return False
+
+    # ------------------------------------------------------------------
+    # PowerShell COM bridge
+    # ------------------------------------------------------------------
+    # pywin32 cannot call OneNote COM methods with [out] BSTR*
+    # parameters in late-binding mode ("Library not registered").
+    # PowerShell handles this correctly via .NET COM interop.
+
+    @staticmethod
+    def _run_powershell(script: str, timeout: int = 15) -> Optional[str]:
+        """Run a PowerShell script and return its stdout, or None on failure."""
+        import subprocess
+        import sys
+
+        if sys.platform != "win32":
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-Command", script,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if result.returncode == 0:
+                return result.stdout
+            logger.debug(
+                "PowerShell returned exit code %d: %s",
+                result.returncode,
+                result.stderr[:500] if result.stderr else "",
+            )
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning("PowerShell command timed out (%ds)", timeout)
+            return None
+        except Exception as exc:
+            logger.debug("PowerShell execution failed: %s", exc)
+            return None
+
+    def _ps_find_and_match_page(
+        self, page_title: str, target_section: Optional[str] = None
+    ) -> Optional[str]:
+        """Use PowerShell FindPages to search for a page and return its ID."""
+        # Escape single quotes in title for PowerShell
+        safe_title = page_title.replace("'", "''")
+        script = (
+            "$o = New-Object -ComObject OneNote.Application; "
+            "[string]$r = ''; "
+            f"$o.FindPages('', '{safe_title}', [ref]$r, $false, $false); "
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "[Console]::Out.Write($r)"
+        )
+
+        xml_str = self._run_powershell(script)
+        if not xml_str:
+            return None
+
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            logger.debug("Could not parse FindPages XML")
+            return None
+
+        self._detect_namespace(root)
+        ns_prefix = self._ns("Page")
+
+        # Collect all pages from the results
+        best_match = None
+
+        for notebook in root.findall(self._ns("Notebook")):
+            for section in self._iter_sections(notebook):
+                sec_name = section.get("name", "")
+                sec_clean = _BACKUP_DATE_PATTERN.sub(
+                    "", sec_name
+                ).lower()
+
+                for page in section.findall(ns_prefix):
+                    pname = page.get("name", "")
+                    pid = page.get("ID", "")
+                    if not pid:
+                        continue
+
+                    # Exact title match
+                    if pname == page_title:
+                        in_section = (
+                            target_section
+                            and sec_clean == target_section.lower()
+                        )
+                        if in_section:
+                            return pid  # Perfect match
+                        if not best_match:
+                            best_match = pid
+
+        return best_match
+
+    def _ps_find_section_id(self, section_name: str) -> Optional[str]:
+        """Use PowerShell GetHierarchy to find a section ID by name."""
+        script = (
+            "$o = New-Object -ComObject OneNote.Application; "
+            "[string]$r = ''; "
+            "$o.GetHierarchy('', 3, [ref]$r); "
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "[Console]::Out.Write($r)"
+        )
+
+        xml_str = self._run_powershell(script, timeout=20)
+        if not xml_str:
+            return None
+
+        try:
+            root = ET.fromstring(xml_str)
+        except ET.ParseError:
+            return None
+
+        self._detect_namespace(root)
+        clean_target = _BACKUP_DATE_PATTERN.sub(
+            "", section_name
+        ).lower()
+
+        for notebook in root.findall(self._ns("Notebook")):
+            for section in self._iter_sections(notebook):
+                sec_name = section.get("name", "")
+                sec_clean = _BACKUP_DATE_PATTERN.sub(
+                    "", sec_name
+                ).lower()
+                if sec_clean == clean_target:
+                    return section.get("ID", "")
+
+        return None
+
+    @staticmethod
+    def _ps_navigate_to(object_id: str) -> bool:
+        """Use PowerShell to call NavigateTo on a OneNote object."""
+        # Escape single quotes in the ID
+        safe_id = object_id.replace("'", "''")
+        script = (
+            "$o = New-Object -ComObject OneNote.Application; "
+            f"$o.NavigateTo('{safe_id}', '')"
+        )
+        result = OneNoteLocalService._run_powershell(script)
+        # PowerShell returns empty string on success (no output)
+        return result is not None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -540,82 +773,152 @@ class OneNoteLocalService:
         self, modified_since: Optional[datetime] = None
     ) -> List[Dict]:
         """
-        The original COM-based implementation of ``list_recent_pages``.
+        COM-based implementation of ``list_recent_pages``.
+
+        All COM work (connect + GetHierarchy + parse) runs inside a
+        **single background thread** to avoid COM apartment issues.
+        The Outlook service uses the same pattern successfully.
 
         Raises ``RuntimeError`` if COM is not usable.
         """
-        root = self._get_hierarchy_xml()
+        result = {"pages": [], "error": None}
+        service = self  # captured by thread closure
 
-        pages: List[Dict] = []
+        def _com_work():
+            import pythoncom
+            pythoncom.CoInitialize()
+            try:
+                import win32com.client
 
-        for notebook in root.findall(self._ns("Notebook")):
-            notebook_name = notebook.get("name", "Unknown Notebook")
-            notebook_id = notebook.get("ID", "")
+                # --- Connect (prefer early binding for full API access) ---
+                app = None
+                try:
+                    import win32com.client.gencache as gencache
+                    for prog_id in ["OneNote.Application.15", "OneNote.Application"]:
+                        try:
+                            app = gencache.EnsureDispatch(prog_id)
+                            logger.info("Connected via EnsureDispatch(%s)", prog_id)
+                            break
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
-            # Sections may be nested inside SectionGroups as well
-            for section in self._iter_sections(notebook):
-                section_name = section.get("name", "Unknown Section")
-                section_id = section.get("ID", "")
-
-                for page in section.findall(self._ns("Page")):
-                    page_id = page.get("ID", "")
-                    page_title = page.get("name", "Untitled")
-                    last_modified_raw = page.get("lastModifiedTime")
-                    page_datetime_raw = page.get("dateTime")
-
-                    last_modified_dt = self._parse_datetime(last_modified_raw)
-
-                    # Apply the modified_since filter
-                    if modified_since is not None and last_modified_dt is not None:
-                        # Ensure both are naive or both are aware for comparison
-                        cmp_modified = last_modified_dt
-                        cmp_since = modified_since
-                        if (
-                            cmp_modified.tzinfo is not None
-                            and cmp_since.tzinfo is None
-                        ):
-                            cmp_modified = cmp_modified.replace(tzinfo=None)
-                        elif (
-                            cmp_modified.tzinfo is None
-                            and cmp_since.tzinfo is not None
-                        ):
-                            cmp_since = cmp_since.replace(tzinfo=None)
-
-                        if cmp_modified < cmp_since:
-                            continue
-
-                    # If we couldn't parse the date and a filter is active,
-                    # skip the page to avoid returning stale data.
-                    if modified_since is not None and last_modified_dt is None:
-                        logger.debug(
-                            "Skipping page '%s' -- could not parse "
-                            "lastModifiedTime '%s'",
-                            page_title,
-                            last_modified_raw,
+                if app is None:
+                    try:
+                        app = win32com.client.Dispatch("OneNote.Application")
+                        logger.info("Connected via late-binding Dispatch")
+                    except Exception as exc:
+                        result["error"] = RuntimeError(
+                            f"Cannot connect to OneNote: {exc}"
                         )
-                        continue
+                        return
 
-                    pages.append(
-                        {
-                            "id": page_id,
-                            "title": page_title,
-                            "lastModifiedDateTime": self._format_datetime(
-                                last_modified_raw
-                            ),
-                            "parentSection": {
-                                "displayName": section_name,
-                                "id": section_id,
-                            },
-                            "notebookName": notebook_name,
-                            "notebookId": notebook_id,
-                            "dateTime": self._format_datetime(
-                                page_datetime_raw
-                            ),
-                            "_source": "com",
-                        }
+                # --- GetHierarchy (multi-strategy) ---
+                xml_str = OneNoteLocalService._call_get_hierarchy_on_app(app)
+                if not xml_str:
+                    result["error"] = RuntimeError(
+                        "GetHierarchy returned no data"
                     )
+                    return
 
-        return pages
+                # --- Parse XML and extract pages ---
+                root = ET.fromstring(xml_str)
+                service._detect_namespace(root)
+
+                pages: List[Dict] = []
+                for notebook in root.findall(service._ns("Notebook")):
+                    notebook_name = notebook.get("name", "Unknown Notebook")
+                    notebook_id = notebook.get("ID", "")
+
+                    for section in service._iter_sections(notebook):
+                        section_name = section.get("name", "Unknown Section")
+                        section_id = section.get("ID", "")
+
+                        for page in section.findall(service._ns("Page")):
+                            page_id = page.get("ID", "")
+                            page_title = page.get("name", "Untitled")
+                            last_modified_raw = page.get("lastModifiedTime")
+                            page_datetime_raw = page.get("dateTime")
+
+                            last_modified_dt = service._parse_datetime(
+                                last_modified_raw
+                            )
+
+                            # Apply the modified_since filter
+                            if (
+                                modified_since is not None
+                                and last_modified_dt is not None
+                            ):
+                                cmp_modified = last_modified_dt
+                                cmp_since = modified_since
+                                if (
+                                    cmp_modified.tzinfo is not None
+                                    and cmp_since.tzinfo is None
+                                ):
+                                    cmp_modified = cmp_modified.replace(
+                                        tzinfo=None
+                                    )
+                                elif (
+                                    cmp_modified.tzinfo is None
+                                    and cmp_since.tzinfo is not None
+                                ):
+                                    cmp_since = cmp_since.replace(tzinfo=None)
+
+                                if cmp_modified < cmp_since:
+                                    continue
+
+                            if (
+                                modified_since is not None
+                                and last_modified_dt is None
+                            ):
+                                continue
+
+                            pages.append(
+                                {
+                                    "id": page_id,
+                                    "title": page_title,
+                                    "lastModifiedDateTime": service._format_datetime(
+                                        last_modified_raw
+                                    ),
+                                    "parentSection": {
+                                        "displayName": section_name,
+                                        "id": section_id,
+                                    },
+                                    "notebookName": notebook_name,
+                                    "notebookId": notebook_id,
+                                    "dateTime": service._format_datetime(
+                                        page_datetime_raw
+                                    ),
+                                    "_source": "com",
+                                }
+                            )
+
+                result["pages"] = pages
+                logger.info(
+                    "COM thread found %d page(s) in OneNote hierarchy.",
+                    len(pages),
+                )
+            except Exception as exc:
+                result["error"] = RuntimeError(str(exc))
+            finally:
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_com_work, daemon=True)
+        t.start()
+        t.join(timeout=30)
+
+        if t.is_alive():
+            self._com_available = False
+            raise RuntimeError("OneNote COM timed out (30s)")
+
+        if result["error"]:
+            raise result["error"]
+
+        return result["pages"]
 
     def _iter_sections(self, parent: ET.Element):
         """

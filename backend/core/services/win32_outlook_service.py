@@ -133,11 +133,11 @@ class OutlookCalendarService:
 
         t = threading.Thread(target=_fetch_in_thread, daemon=True)
         t.start()
-        t.join(timeout=20)
+        t.join(timeout=45)
 
         if t.is_alive():
             logger.error(
-                "Outlook COM timed out (20s). "
+                "Outlook COM timed out (45s). "
                 "New Outlook may not support COM automation."
             )
             raise ConnectionError("Outlook COM timed out")
