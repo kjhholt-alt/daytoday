@@ -71,11 +71,11 @@ class OutlookCalendarService:
         safe_getattr_fn = self._safe_getattr
 
         def _fetch_in_thread():
+            import pythoncom
+            pythoncom.CoInitialize()
             try:
-                import pythoncom
                 import win32com.client
 
-                pythoncom.CoInitialize()
                 logger.info("Connecting to Outlook via COM automation...")
                 outlook = win32com.client.Dispatch("Outlook.Application")
                 namespace = outlook.GetNamespace("MAPI")
@@ -124,14 +124,20 @@ class OutlookCalendarService:
             except Exception as e:
                 result["error"] = e
                 logger.error("COM calendar thread failed: %s", e)
+            finally:
+                # Release COM objects to avoid locking Outlook
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
 
         t = threading.Thread(target=_fetch_in_thread, daemon=True)
         t.start()
-        t.join(timeout=45)
+        t.join(timeout=20)
 
         if t.is_alive():
             logger.error(
-                "Outlook COM timed out (45s). "
+                "Outlook COM timed out (20s). "
                 "New Outlook may not support COM automation."
             )
             raise ConnectionError("Outlook COM timed out")

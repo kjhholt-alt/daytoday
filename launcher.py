@@ -109,6 +109,16 @@ def run_server():
     """Start the Django development server."""
     from django.core.management import call_command
 
+    # Pre-check: verify WSGI app loads before starting server
+    try:
+        from daytoday_project.wsgi import application  # noqa: F401
+    except Exception as e:
+        logger.error("WSGI pre-check failed: %s", e, exc_info=True)
+        raise RuntimeError(
+            f"Could not load WSGI application: {e}\n"
+            f"This usually means a Python package is missing."
+        )
+
     logger.info(f"Starting DayToDay server at {URL}")
     logger.info("Press Ctrl+C to stop.")
 

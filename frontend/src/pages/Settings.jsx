@@ -10,6 +10,9 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  TextField,
+  Button,
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -21,19 +24,27 @@ import {
   CalendarMonth as CalendarIcon,
   Warning as WarningIcon,
   Computer as ComputerIcon,
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
-import { getStatus } from '../services/api';
+import { getStatus, saveConfig } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Settings() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [notebooks, setNotebooks] = useState([]);
+  const [newNotebook, setNewNotebook] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await getStatus();
       setStatus(res.data);
+      setNotebooks(res.data.onenote_notebooks || []);
       setError(null);
     } catch (err) {
       setError('Backend not reachable. Make sure the server is running.');
@@ -46,6 +57,31 @@ export default function Settings() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  const handleAddNotebook = () => {
+    const trimmed = newNotebook.trim();
+    if (trimmed && !notebooks.includes(trimmed)) {
+      setNotebooks([...notebooks, trimmed]);
+      setNewNotebook('');
+    }
+  };
+
+  const handleRemoveNotebook = (index) => {
+    setNotebooks(notebooks.filter((_, i) => i !== index));
+  };
+
+  const handleSaveNotebooks = async () => {
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      await saveConfig({ onenote_notebooks: notebooks });
+      setSaveMessage({ type: 'success', text: 'Notebook filter saved! Re-run collection to apply.' });
+    } catch (err) {
+      setSaveMessage({ type: 'error', text: 'Failed to save notebook filter.' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) return <LoadingSpinner message="Loading settings..." />;
 
@@ -162,6 +198,78 @@ export default function Settings() {
           </Typography>
         </Alert>
       </Paper>
+
+      {/* OneNote Notebook Filter */}
+      {status?.onenote_enabled && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            <OneNoteIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+            OneNote Notebook Filter
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Only include pages from these notebooks. Leave empty to include all notebooks.
+          </Typography>
+
+          {saveMessage && (
+            <Alert severity={saveMessage.type} sx={{ mb: 2 }} onClose={() => setSaveMessage(null)}>
+              {saveMessage.text}
+            </Alert>
+          )}
+
+          {notebooks.length > 0 && (
+            <List dense sx={{ mb: 1 }}>
+              {notebooks.map((nb, index) => (
+                <ListItem
+                  key={index}
+                  secondaryAction={
+                    <IconButton edge="end" size="small" onClick={() => handleRemoveNotebook(index)}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  }
+                >
+                  <ListItemIcon><OneNoteIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText primary={nb} />
+                </ListItem>
+              ))}
+            </List>
+          )}
+
+          {notebooks.length === 0 && (
+            <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+              No filter set — all notebooks will be included.
+            </Alert>
+          )}
+
+          <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+            <TextField
+              size="small"
+              placeholder="Notebook name (e.g. Notes FY25)"
+              value={newNotebook}
+              onChange={(e) => setNewNotebook(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddNotebook()}
+              sx={{ flex: 1 }}
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={handleAddNotebook}
+              disabled={!newNotebook.trim()}
+            >
+              Add
+            </Button>
+          </Box>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<SaveIcon />}
+            onClick={handleSaveNotebooks}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Filter'}
+          </Button>
+        </Paper>
+      )}
 
       {/* Configured Folders */}
       {status?.word_doc_directories && status.word_doc_directories.length > 0 && (

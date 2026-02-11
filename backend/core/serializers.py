@@ -27,13 +27,21 @@ class MeetingSerializer(serializers.ModelSerializer):
 
 
 class NoteReferenceSerializer(serializers.ModelSerializer):
+    daily_summary = serializers.SerializerMethodField()
+
     class Meta:
         model = NoteReference
         fields = [
             'id', 'notebook_name', 'section_name', 'page_title',
             'page_graph_id', 'content_snippet', 'content_text',
             'changes_summary', 'change_type', 'web_url', 'last_modified',
+            'daily_summary',
         ]
+
+    def get_daily_summary(self, obj):
+        if obj.daily_summary_id:
+            return {'date': str(obj.daily_summary.date)}
+        return None
 
 
 class WordDocumentSerializer(serializers.ModelSerializer):

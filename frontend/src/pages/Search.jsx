@@ -12,16 +12,145 @@ import {
   ListItemText,
   ListItemIcon,
   Paper,
+  Box,
+  Collapse,
+  IconButton,
+  Tooltip,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
   Event as EventIcon,
   Note as NoteIcon,
   Description as DocIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
-import { search } from '../services/api';
+import { search, openNote } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+
+function NoteSearchItem({ note }) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
+  const hasContent = note.content_snippet && note.content_snippet.trim().length > 0;
+
+  const handleOpenNote = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await openNote(note.id);
+      if (res.data.action === 'open_url') {
+        window.open(res.data.url, '_blank');
+      } else {
+        setSnack({ open: true, message: res.data.detail || 'Opened in OneNote', severity: 'success' });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Could not open note';
+      setSnack({ open: true, message: msg, severity: 'error' });
+    }
+  };
+
+  const handleClick = () => {
+    setExpanded(!expanded);
+  };
+
+  // Get the date from the daily_summary for navigation
+  const noteDate = note.daily_summary?.date;
+
+  return (
+    <>
+      <ListItem
+        button
+        onClick={handleClick}
+        sx={{
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          '&:hover': { bgcolor: 'action.hover' },
+        }}
+      >
+        <Box sx={{ display: 'flex', width: '100%', alignItems: 'flex-start' }}>
+          <ListItemIcon><NoteIcon color="primary" /></ListItemIcon>
+          <ListItemText
+            primary={
+              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                  {note.page_title}
+                </Typography>
+                <Tooltip title="Open in OneNote">
+                  <IconButton size="small" onClick={handleOpenNote} color="primary">
+                    <OpenInNewIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                {hasContent && (
+                  <IconButton size="small">
+                    {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                  </IconButton>
+                )}
+              </Box>
+            }
+            secondary={
+              <Box component="span">
+                {[note.notebook_name, note.section_name].filter(Boolean).join(' > ')}
+                {noteDate && (
+                  <Typography
+                    variant="caption"
+                    component="span"
+                    color="primary"
+                    sx={{ ml: 1, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/day/${noteDate}`); }}
+                  >
+                    View day
+                  </Typography>
+                )}
+              </Box>
+            }
+          />
+        </Box>
+        {hasContent && (
+          <Collapse in={expanded} sx={{ width: '100%', pl: 7 }}>
+            <Box
+              sx={{
+                mt: 0.5,
+                mb: 1,
+                p: 1.5,
+                bgcolor: 'action.hover',
+                borderRadius: 1,
+                borderLeft: 3,
+                borderColor: 'primary.main',
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  whiteSpace: 'pre-line',
+                  maxHeight: 300,
+                  overflow: 'auto',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.6,
+                }}
+              >
+                {note.content_snippet}
+              </Typography>
+            </Box>
+          </Collapse>
+        )}
+      </ListItem>
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3000}
+        onClose={() => setSnack({ ...snack, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snack.severity} onClose={() => setSnack({ ...snack, open: false })}>
+          {snack.message}
+        </Alert>
+      </Snackbar>
+    </>
+  );
+}
 
 export default function Search() {
   const navigate = useNavigate();
@@ -110,13 +239,7 @@ export default function Search() {
             <Paper variant="outlined">
               <List>
                 {(results.notes || []).map((n) => (
-                  <ListItem key={n.id}>
-                    <ListItemIcon><NoteIcon /></ListItemIcon>
-                    <ListItemText
-                      primary={n.page_title}
-                      secondary={n.section_name || null}
-                    />
-                  </ListItem>
+                  <NoteSearchItem key={n.id} note={n} />
                 ))}
                 {(!results.notes || results.notes.length === 0) && (
                   <ListItem>

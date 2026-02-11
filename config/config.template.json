@@ -6,5 +6,6 @@
     "outlook_enabled": true,
     "onenote_enabled": true,
     "onenote_paths": [],
+    "onenote_notebooks": [],
     "graph_client_id": ""
 }

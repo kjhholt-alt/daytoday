@@ -7,6 +7,9 @@ from docx.opc.exceptions import PackageNotFoundError
 
 logger = logging.getLogger(__name__)
 
+# File extensions this service can scan and extract text from
+_SUPPORTED_EXTENSIONS = {'*.docx', '*.pdf'}
+
 
 class WordService:
     def __init__(self, directories: list):
@@ -22,35 +25,42 @@ class WordService:
                 logger.warning(f"Path is not a directory: {directory}")
                 continue
 
-            for docx_path in directory.rglob('*.docx'):
-                if docx_path.name.startswith('~$'):
-                    continue
-                try:
-                    mod_time = datetime.fromtimestamp(
-                        docx_path.stat().st_mtime
-                    )
-                except OSError as e:
-                    logger.warning(f"Cannot stat {docx_path}: {e}")
-                    continue
-
-                if modified_since:
-                    compare_date = modified_since
-                    if isinstance(compare_date, datetime):
-                        compare_date = compare_date.date()
-                    if mod_time.date() < compare_date:
+            for pattern in _SUPPORTED_EXTENSIONS:
+                for file_path in directory.rglob(pattern):
+                    if file_path.name.startswith('~$'):
+                        continue
+                    try:
+                        mod_time = datetime.fromtimestamp(
+                            file_path.stat().st_mtime
+                        )
+                    except OSError as e:
+                        logger.warning(f"Cannot stat {file_path}: {e}")
                         continue
 
-                documents.append({
-                    'file_path': str(docx_path),
-                    'file_name': docx_path.name,
-                    'modified_at': mod_time.isoformat(),
-                    'size_bytes': docx_path.stat().st_size,
-                })
+                    if modified_since:
+                        compare_date = modified_since
+                        if isinstance(compare_date, datetime):
+                            compare_date = compare_date.date()
+                        if mod_time.date() < compare_date:
+                            continue
 
-        logger.info(f"Found {len(documents)} Word document(s).")
+                    documents.append({
+                        'file_path': str(file_path),
+                        'file_name': file_path.name,
+                        'modified_at': mod_time.isoformat(),
+                        'size_bytes': file_path.stat().st_size,
+                    })
+
+        logger.info(f"Found {len(documents)} document(s) (.docx + .pdf).")
         return documents
 
     def extract_text(self, file_path: str) -> dict:
+        ext = Path(file_path).suffix.lower()
+        if ext == '.pdf':
+            return self._extract_pdf_text(file_path)
+        return self._extract_docx_text(file_path)
+
+    def _extract_docx_text(self, file_path: str) -> dict:
         try:
             doc = Document(file_path)
         except PackageNotFoundError:
@@ -79,6 +89,37 @@ class WordService:
                     'type': 'table',
                     'rows': rows,
                 })
+
+        return {
+            'file_name': Path(file_path).name,
+            'file_path': file_path,
+            'content': content_blocks,
+        }
+
+    def _extract_pdf_text(self, file_path: str) -> dict:
+        try:
+            from PyPDF2 import PdfReader
+        except ImportError:
+            logger.error("PyPDF2 not installed — cannot read PDF files.")
+            return {'error': 'PyPDF2 not installed', 'content': []}
+
+        try:
+            reader = PdfReader(file_path)
+        except Exception as e:
+            logger.error(f"Cannot open PDF file {file_path}: {e}")
+            return {'error': str(e), 'content': []}
+
+        content_blocks = []
+        for i, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text()
+                if text and text.strip():
+                    content_blocks.append({
+                        'type': 'paragraph',
+                        'text': text.strip(),
+                    })
+            except Exception as e:
+                logger.debug(f"Could not extract text from page {i+1} of {file_path}: {e}")
 
         return {
             'file_name': Path(file_path).name,

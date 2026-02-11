@@ -76,11 +76,20 @@ class SearchView(APIView):
             )
 
         meetings = Meeting.objects.filter(
-            Q(subject__icontains=query) | Q(body_preview__icontains=query)
+            Q(subject__icontains=query)
+            | Q(body_preview__icontains=query)
+            | Q(organizer_name__icontains=query)
+            | Q(organizer_email__icontains=query)
+            | Q(attendees_json__icontains=query)
+            | Q(location__icontains=query)
         ).select_related('daily_summary').order_by('-start_time')[:20]
 
         notes = NoteReference.objects.filter(
-            Q(page_title__icontains=query) | Q(content_snippet__icontains=query)
+            Q(page_title__icontains=query)
+            | Q(content_snippet__icontains=query)
+            | Q(content_text__icontains=query)
+            | Q(notebook_name__icontains=query)
+            | Q(section_name__icontains=query)
         ).select_related('daily_summary').order_by('-last_modified')[:20]
 
         documents = WordDocument.objects.filter(
@@ -149,6 +158,7 @@ class StatusView(APIView):
             'word_doc_directories': [],
             'outlook_enabled': False,
             'onenote_enabled': False,
+            'onenote_notebooks': [],
         }
         try:
             from .services.config_service import ConfigService
@@ -156,6 +166,7 @@ class StatusView(APIView):
             config_info['word_doc_directories'] = getattr(config, 'word_doc_directories', [])
             config_info['outlook_enabled'] = getattr(config, 'outlook_enabled', False)
             config_info['onenote_enabled'] = getattr(config, 'onenote_enabled', False)
+            config_info['onenote_notebooks'] = getattr(config, 'onenote_notebooks', [])
         except Exception:
             pass
 
@@ -180,6 +191,7 @@ class StatusView(APIView):
             'outlook_enabled': config_info['outlook_enabled'],
             'onenote_enabled': config_info['onenote_enabled'],
             'word_doc_directories': config_info['word_doc_directories'],
+            'onenote_notebooks': config_info['onenote_notebooks'],
             'graph_enabled': graph_auth_info['graph_enabled'],
             'graph_authenticated': graph_auth_info['graph_authenticated'],
             'graph_account': graph_auth_info['graph_account'],
@@ -288,7 +300,8 @@ class SaveConfigView(APIView):
 
             # Update allowed fields
             allowed = ['word_doc_directories',
-                       'recordings_directories', 'onenote_paths']
+                       'recordings_directories', 'onenote_paths',
+                       'onenote_notebooks']
             updated = []
             for key in allowed:
                 if key in request.data:
@@ -313,6 +326,54 @@ class SaveConfigView(APIView):
                 {'detail': f'Failed to save config: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class OpenNoteView(APIView):
+    """POST /api/notes/<uuid>/open/ - Open a OneNote page in the desktop app."""
+
+    def post(self, request, note_id):
+        import os
+        import sys
+
+        try:
+            note = NoteReference.objects.get(id=note_id)
+        except NoteReference.DoesNotExist:
+            return Response(
+                {'detail': 'Note not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Try web_url first (onenote: protocol links from COM)
+        if note.web_url:
+            return Response({'action': 'open_url', 'url': note.web_url})
+
+        # For file-based notes, open the .one file directly
+        if note.page_graph_id and note.page_graph_id.startswith('file://'):
+            file_path = note.page_graph_id[len('file://'):]
+            if os.path.isfile(file_path):
+                try:
+                    if sys.platform == 'win32':
+                        os.startfile(file_path)
+                    return Response({
+                        'action': 'opened_local',
+                        'detail': f'Opened {os.path.basename(file_path)} in OneNote.',
+                    })
+                except Exception as e:
+                    logger.error("Failed to open note file: %s", e)
+                    return Response(
+                        {'detail': f'Failed to open file: {e}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+            else:
+                return Response(
+                    {'detail': f'File not found: {os.path.basename(file_path)}'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        return Response(
+            {'detail': 'No link available for this note.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
 
 class AttendeeSearchView(APIView):

@@ -153,6 +153,13 @@ class SummaryService:
     def _store_meetings(self, summary, events):
         meetings = []
         for event in events:
+            # Skip events with empty/invalid start or end times
+            if not event.get('start_time') or not event.get('end_time'):
+                logger.warning(
+                    "Skipping event '%s' — missing start/end time.",
+                    event.get('subject', '?'),
+                )
+                continue
             meetings.append(Meeting(
                 daily_summary=summary,
                 graph_event_id=event['graph_id'],
@@ -178,6 +185,18 @@ class SummaryService:
         modified_since = datetime.combine(target_date - timedelta(days=7), datetime.min.time())
         pages = self._onenote.list_recent_pages(modified_since=modified_since)
 
+        # Filter by configured notebook names (if any)
+        notebook_filter = [n.lower() for n in self._config.onenote_notebooks]
+        if notebook_filter:
+            pages = [
+                p for p in pages
+                if p.get('notebookName', '').lower() in notebook_filter
+            ]
+            logger.info(
+                "Notebook filter active: %s -- %d page(s) after filtering.",
+                self._config.onenote_notebooks, len(pages),
+            )
+
         # Load yesterday's notes for comparison
         previous_notes = self._get_previous_notes(target_date)
 
@@ -198,15 +217,24 @@ class SummaryService:
                 page_id, content_text, previous_notes
             )
 
+            # Get OneNote hyperlink for clickable link
+            onenote_url = ''
+            try:
+                onenote_url = self._onenote.get_page_hyperlink(page_id)
+            except Exception:
+                pass
+
             notes.append(NoteReference(
                 daily_summary=summary,
                 page_title=page.get('title', 'Untitled'),
                 page_graph_id=page_id,
+                notebook_name=page.get('notebookName', ''),
                 section_name=parent.get('displayName', '') if parent else '',
                 content_snippet=content_text[:500] if content_text else '',
                 content_text=content_text[:50000] if content_text else '',
                 change_type=change_type,
                 changes_summary=changes_summary,
+                web_url=onenote_url,
                 last_modified=page.get('lastModifiedDateTime'),
             ))
         if notes:
@@ -217,6 +245,14 @@ class SummaryService:
         """Collect OneNote pages via Graph API (fallback for COM)."""
         modified_since = datetime.combine(target_date - timedelta(days=7), datetime.min.time())
         pages = self._graph_onenote.list_recent_pages(modified_since=modified_since)
+
+        # Filter by configured notebook names (if any)
+        notebook_filter = [n.lower() for n in self._config.onenote_notebooks]
+        if notebook_filter:
+            pages = [
+                p for p in pages
+                if p.get('notebookName', '').lower() in notebook_filter
+            ]
 
         # Load yesterday's notes for comparison
         previous_notes = self._get_previous_notes(target_date)
@@ -241,15 +277,20 @@ class SummaryService:
                 page_id, content_text, previous_notes
             )
 
+            # Graph API pages may have links and notebook info
+            web_url = page.get('links', {}).get('oneNoteWebUrl', {}).get('href', '')
+
             notes.append(NoteReference(
                 daily_summary=summary,
                 page_title=page.get('title', 'Untitled'),
                 page_graph_id=page_id,
+                notebook_name=page.get('notebookName', ''),
                 section_name=parent.get('displayName', '') if parent else '',
                 content_snippet=content_text[:500] if content_text else '',
                 content_text=content_text[:50000] if content_text else '',
                 change_type=change_type,
                 changes_summary=changes_summary,
+                web_url=web_url,
                 last_modified=page.get('lastModifiedDateTime'),
             ))
         if notes:

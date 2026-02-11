@@ -37,6 +37,17 @@ from typing import List, Dict, Optional
 # Pattern to strip OneNote backup date suffixes like " (On 2-4-2026)"
 _BACKUP_DATE_PATTERN = _re.compile(r"\s*\(On \d{1,2}-\d{1,2}-\d{4}\)$")
 
+# Font names and metadata tokens to filter out of binary text extraction
+_FONT_NAMES = frozenset({
+    'Calibri', 'Calibri Light', 'Arial', 'Times New Roman', 'Segoe UI',
+    'Consolas', 'Courier New', 'Verdana', 'Tahoma', 'Wingdings',
+    'Microsoft Sans Serif', 'Symbol', 'Cambria', 'Georgia', 'Impact',
+    'Lucida Console', 'Trebuchet MS', 'Comic Sans MS', 'Palatino Linotype',
+})
+
+# Pattern to match UTF-16LE printable strings (min 4 chars)
+_UTF16LE_PATTERN = _re.compile(b'(?:[\x20-\x7e]\x00){4,}')
+
 logger = logging.getLogger(__name__)
 
 # OneNote HierarchyScope enum value used by GetHierarchy
@@ -99,27 +110,32 @@ class OneNoteLocalService:
         result = {"app": None, "error": None}
 
         def _try_connect():
+            import pythoncom
+            pythoncom.CoInitialize()
             try:
-                import pythoncom
-                pythoncom.CoInitialize()
-            except Exception:
-                pass
-            for prog_id in prog_ids:
+                for prog_id in prog_ids:
+                    try:
+                        logger.info("Attempting to connect to OneNote via %s", prog_id)
+                        app = gencache.EnsureDispatch(prog_id)
+                        result["app"] = app
+                        return
+                    except Exception as exc:
+                        logger.debug("Could not connect via %s: %s", prog_id, exc)
+                        result["error"] = exc
+                # Also try plain Dispatch as fallback
                 try:
-                    logger.info("Attempting to connect to OneNote via %s", prog_id)
-                    app = gencache.EnsureDispatch(prog_id)
+                    import win32com.client
+                    app = win32com.client.Dispatch("OneNote.Application")
                     result["app"] = app
-                    return
                 except Exception as exc:
-                    logger.debug("Could not connect via %s: %s", prog_id, exc)
                     result["error"] = exc
-            # Also try plain Dispatch as fallback
-            try:
-                import win32com.client
-                app = win32com.client.Dispatch("OneNote.Application")
-                result["app"] = app
-            except Exception as exc:
-                result["error"] = exc
+            finally:
+                # Release COM if we failed to connect
+                if result["app"] is None:
+                    try:
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
 
         t = threading.Thread(target=_try_connect, daemon=True)
         t.start()
@@ -462,16 +478,10 @@ class OneNoteLocalService:
             logger.warning("get_page_content called with empty page_id")
             return ""
 
-        # File-scan pages -- we cannot read .one binary content
+        # File-scan pages -- extract text from .one binary
         if page_id.startswith("file://"):
             file_path = page_id[len("file://"):]
-            fname = os.path.basename(file_path)
-            return (
-                f"[OneNote section file: {fname}] "
-                f"Content cannot be read directly from the binary .one "
-                f"format.  Open this notebook in OneNote to view its "
-                f"pages."
-            )
+            return self._extract_text_from_one_file(file_path)
 
         # COM path
         logger.info("Fetching content for page ID: %s", page_id)
@@ -499,6 +509,28 @@ class OneNoteLocalService:
 
         self._detect_namespace(root)
         return self._extract_text_from_page(root)
+
+    def get_page_hyperlink(self, page_id: str) -> str:
+        """Return a ``onenote:`` protocol URL that opens the page in OneNote.
+
+        Uses the COM ``GetHyperlinkToObject`` method.  Returns an empty
+        string if the link cannot be generated (file-scan pages, COM
+        unavailable, etc.).
+        """
+        if not page_id or page_id.startswith("file://"):
+            return ""
+
+        try:
+            app = self._get_app()
+        except RuntimeError:
+            return ""
+
+        try:
+            link = app.GetHyperlinkToObject(page_id, "")
+            return link or ""
+        except Exception as exc:
+            logger.debug("GetHyperlinkToObject failed for %s: %s", page_id, exc)
+            return ""
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -596,6 +628,63 @@ class OneNoteLocalService:
                 yield child
             elif local_tag == "SectionGroup":
                 yield from self._iter_sections(child)
+
+    @staticmethod
+    def _extract_text_from_one_file(file_path: str) -> str:
+        """Extract readable text from a binary ``.one`` section file.
+
+        OneNote ``.one`` files store text as UTF-16LE strings interleaved
+        with binary formatting data.  We scan the raw bytes for printable
+        UTF-16LE runs and filter out font names, GUIDs, and other metadata
+        to return meaningful note content.
+        """
+        if not os.path.isfile(file_path):
+            return ""
+
+        try:
+            with open(file_path, 'rb') as f:
+                data = f.read(5 * 1024 * 1024)  # cap at 5 MB
+        except Exception as exc:
+            logger.debug("Could not read .one file %s: %s", file_path, exc)
+            return ""
+
+        # Find all UTF-16LE printable string runs (min 4 chars)
+        raw_parts = _UTF16LE_PATTERN.findall(data)
+        decoded = [p.decode('utf-16-le', errors='ignore').strip()
+                   for p in raw_parts]
+
+        # Filter out noise
+        seen: set = set()
+        filtered: List[str] = []
+        for text in decoded:
+            if not text or len(text) < 3:
+                continue
+            if text in _FONT_NAMES:
+                continue
+            if text in seen:
+                continue
+            # Skip GUIDs
+            if text.startswith('{') and text.endswith('}') and len(text) > 30:
+                continue
+            # Skip pure numbers
+            if _re.match(r'^[\d.,]+$', text):
+                continue
+            # Skip XML/metadata fragments
+            if text.startswith('<') and ('provider=' in text or 'localId' in text):
+                continue
+            # Skip known OneNote internal tokens
+            if text in ('PageTitle', 'PageDateTime', 'Untitled picture.png',
+                        'NotebookManagementEntityGuid'):
+                continue
+            seen.add(text)
+            filtered.append(text)
+
+        content = '\n'.join(filtered)
+        logger.debug(
+            "Extracted %d chars from .one binary: %s",
+            len(content), os.path.basename(file_path),
+        )
+        return content
 
     def _extract_text_from_page(self, root: ET.Element) -> str:
         """

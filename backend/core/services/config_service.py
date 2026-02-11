@@ -59,6 +59,7 @@ DEFAULT_CONFIG = {
     'recordings_directories': [],
     'onenote_enabled': True,
     'onenote_paths': [],          # empty list means "use auto-detected defaults"
+    'onenote_notebooks': [],      # empty list means "include all notebooks"
     'outlook_enabled': True,
     'graph_client_id': '',        # Azure AD app (public client) ID for MS Graph
 }
@@ -133,6 +134,12 @@ class ConfigService:
                 "Config key 'onenote_paths' must be a list of directory paths."
             )
 
+        on_notebooks = self._config.get('onenote_notebooks')
+        if on_notebooks is not None and not isinstance(on_notebooks, list):
+            raise ConfigError(
+                "Config key 'onenote_notebooks' must be a list of notebook names."
+            )
+
     def get(self, key, default=None):
         return self._config.get(key, default)
 
@@ -161,6 +168,14 @@ class ConfigService:
         if configured:
             return configured
         return _default_onenote_paths()
+
+    @property
+    def onenote_notebooks(self) -> list:
+        """Return the list of notebook names to include.
+
+        An empty list means 'include all notebooks' (no filtering).
+        """
+        return self._config.get('onenote_notebooks', [])
 
     @property
     def outlook_enabled(self):

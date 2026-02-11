@@ -39,6 +39,9 @@ export const logoutGraph = () => api.post('/auth/logout/');
 // Config
 export const saveConfig = (data) => api.post('/config/', data);
 
+// Notes
+export const openNote = (noteId) => api.post(`/notes/${noteId}/open/`);
+
 // Attendees
 export const searchAttendees = (query) => api.get(`/attendees/?q=${encodeURIComponent(query)}`);
 export const getTopAttendees = (limit = 20) => api.get(`/attendees/top/?limit=${limit}`);
