@@ -8,6 +8,7 @@ build/
 venv/
 .env
 *.sqlite3
+db.sqlite3
 token_cache.bin
 
 # Node/React
@@ -20,6 +21,7 @@ frontend/.env.local
 config/config.json
 
 # Logs
+logs/
 backend/logs/*.log
 
 # IDE
@@ -32,6 +34,13 @@ backend/logs/*.log
 .DS_Store
 Thumbs.db
 desktop.ini
+nul
 
-# PyInstaller
-*.spec
+# Temporary/build helper files
+test_com.py
+build_temp/
+backend/static/
+
+# PyInstaller build logs
+*.spec.log
+pyinstaller_*.log

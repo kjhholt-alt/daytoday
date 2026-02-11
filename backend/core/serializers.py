@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    DailySummary, Meeting, Transcript, NoteReference, WordDocument,
+    DailySummary, Meeting, Transcript, NoteReference, WordDocument, Recording,
 )
 
 
@@ -31,7 +31,8 @@ class NoteReferenceSerializer(serializers.ModelSerializer):
         model = NoteReference
         fields = [
             'id', 'notebook_name', 'section_name', 'page_title',
-            'page_graph_id', 'content_snippet', 'web_url', 'last_modified',
+            'page_graph_id', 'content_snippet', 'content_text',
+            'changes_summary', 'change_type', 'web_url', 'last_modified',
         ]
 
 
@@ -41,6 +42,15 @@ class WordDocumentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'file_name', 'file_path', 'content_text',
             'modified_at', 'size_bytes',
+        ]
+
+
+class RecordingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Recording
+        fields = [
+            'id', 'file_name', 'file_path', 'file_type',
+            'transcript_text', 'modified_at', 'size_bytes',
         ]
 
 
@@ -54,13 +64,16 @@ class DailySummaryListSerializer(serializers.ModelSerializer):
     doc_count = serializers.IntegerField(
         source='word_documents.count', read_only=True
     )
+    recording_count = serializers.IntegerField(
+        source='recordings.count', read_only=True
+    )
 
     class Meta:
         model = DailySummary
         fields = [
             'id', 'date', 'status', 'summary_text', 'notes',
             'created_at', 'updated_at', 'meeting_count',
-            'note_count', 'doc_count',
+            'note_count', 'doc_count', 'recording_count',
         ]
 
 
@@ -68,6 +81,7 @@ class DailySummaryDetailSerializer(serializers.ModelSerializer):
     meetings = MeetingSerializer(many=True, read_only=True)
     note_references = NoteReferenceSerializer(many=True, read_only=True)
     word_documents = WordDocumentSerializer(many=True, read_only=True)
+    recordings = RecordingSerializer(many=True, read_only=True)
 
     class Meta:
         model = DailySummary
@@ -75,4 +89,5 @@ class DailySummaryDetailSerializer(serializers.ModelSerializer):
             'id', 'date', 'status', 'summary_text', 'notes',
             'error_message', 'created_at', 'updated_at',
             'meetings', 'note_references', 'word_documents',
+            'recordings',
         ]

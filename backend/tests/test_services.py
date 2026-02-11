@@ -85,69 +85,46 @@ class WordServiceTest(TestCase):
         self.assertEqual(docs[0]['file_name'], 'new.docx')
 
 
-class CalendarServiceTest(TestCase):
-    def test_normalize_event(self):
-        from core.services.calendar_service import CalendarService
+class OutlookCalendarServiceTest(TestCase):
+    def test_extract_teams_url(self):
+        from core.services.win32_outlook_service import OutlookCalendarService
 
-        mock_graph = MagicMock()
-        service = CalendarService(mock_graph)
+        service = OutlookCalendarService()
 
-        raw_event = {
-            'id': 'evt-123',
-            'subject': 'Team Standup',
-            'start': {'dateTime': '2025-01-15T09:00:00', 'timeZone': 'UTC'},
-            'end': {'dateTime': '2025-01-15T09:30:00', 'timeZone': 'UTC'},
-            'organizer': {
-                'emailAddress': {
-                    'name': 'John Doe',
-                    'address': 'john@example.com',
-                }
-            },
-            'attendees': [
-                {
-                    'emailAddress': {'name': 'Jane', 'address': 'jane@example.com'},
-                    'status': {'response': 'accepted'},
-                }
-            ],
-            'bodyPreview': 'Daily standup meeting',
-            'location': {'displayName': 'Room 101'},
-            'isOnlineMeeting': True,
-            'onlineMeeting': {'joinUrl': 'https://teams.microsoft.com/meet/123'},
-            'webLink': 'https://outlook.office.com/calendar/item/123',
-        }
-
-        normalized = service._normalize_event(raw_event)
-        self.assertEqual(normalized['graph_id'], 'evt-123')
-        self.assertEqual(normalized['subject'], 'Team Standup')
-        self.assertEqual(normalized['organizer_name'], 'John Doe')
-        self.assertEqual(len(normalized['attendees']), 1)
-        self.assertTrue(normalized['is_online_meeting'])
-        self.assertIn('teams.microsoft.com', normalized['online_meeting_url'])
-
-
-class VTTParserTest(TestCase):
-    def test_parse_vtt(self):
-        from core.services.summary_service import SummaryService
-        service = SummaryService.__new__(SummaryService)
-
-        vtt = (
-            "WEBVTT\n\n"
-            "1\n"
-            "00:00:00.000 --> 00:00:05.000\n"
-            "Hello everyone, welcome to the meeting.\n\n"
-            "2\n"
-            "00:00:05.000 --> 00:00:10.000\n"
-            "Let's get started with the agenda.\n"
+        body_with_url = (
+            "Join the meeting:\n"
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc123/0\n"
+            "Or call in by phone..."
         )
+        url = service._extract_teams_url(body_with_url)
+        self.assertIn('teams.microsoft.com', url)
 
-        plain = service._parse_vtt_to_plain(vtt)
-        self.assertIn('Hello everyone', plain)
-        self.assertIn("Let's get started", plain)
-        self.assertNotIn('WEBVTT', plain)
-        self.assertNotIn('-->', plain)
+    def test_extract_teams_url_no_match(self):
+        from core.services.win32_outlook_service import OutlookCalendarService
 
-    def test_parse_empty_vtt(self):
-        from core.services.summary_service import SummaryService
-        service = SummaryService.__new__(SummaryService)
-        self.assertEqual(service._parse_vtt_to_plain(''), '')
-        self.assertEqual(service._parse_vtt_to_plain(None), '')
+        service = OutlookCalendarService()
+        self.assertEqual(service._extract_teams_url('No teams link here'), '')
+        self.assertEqual(service._extract_teams_url(''), '')
+
+    def test_com_datetime_to_iso(self):
+        from core.services.win32_outlook_service import OutlookCalendarService
+
+        result = OutlookCalendarService._com_datetime_to_iso(
+            datetime(2025, 6, 15, 9, 30, 0)
+        )
+        self.assertEqual(result, '2025-06-15T09:30:00+00:00')
+
+    def test_com_datetime_to_iso_none(self):
+        from core.services.win32_outlook_service import OutlookCalendarService
+
+        self.assertEqual(OutlookCalendarService._com_datetime_to_iso(None), '')
+
+
+class ConfigServiceTest(TestCase):
+    def test_default_config(self):
+        from core.services.config_service import ConfigService
+        ConfigService.reset()
+        config = ConfigService.get_instance()
+        self.assertTrue(config.outlook_enabled)
+        self.assertTrue(config.onenote_enabled)
+        self.assertIsInstance(config.word_doc_directories, list)

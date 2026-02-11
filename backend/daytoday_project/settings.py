@@ -77,11 +77,15 @@ WSGI_APPLICATION = 'daytoday_project.wsgi.application'
 
 
 # Database
+# In PyInstaller mode, the bundle is read-only so we store the DB
+# in the user's home directory (~/.daytoday/)
+_DB_DIR = Path(os.environ.get('DAYTODAY_DATA_DIR', str(BASE_DIR)))
+_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': _DB_DIR / 'db.sqlite3',
         'OPTIONS': {
             'timeout': 30,
         },
@@ -111,14 +115,21 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# React build output directory (served as static files)
+REACT_BUILD_DIR = PROJECT_ROOT / 'frontend' / 'build'
+STATICFILES_DIRS = []
+if REACT_BUILD_DIR.exists():
+    STATICFILES_DIRS.append(REACT_BUILD_DIR / 'static')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# CORS
-
+# CORS - Allow both dev server and same-origin production
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
 ]
 
 
@@ -127,7 +138,7 @@ CORS_ALLOWED_ORIGINS = [
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
-    'DATETIME_FORMAT': '%Y-%m-%dT%H:%M:%S%z',
+    'DATETIME_FORMAT': 'iso-8601',
 }
 
 

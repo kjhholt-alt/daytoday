@@ -16,16 +16,21 @@ import {
   Button,
   Snackbar,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   Today as TodayIcon,
   History as HistoryIcon,
   Search as SearchIcon,
+  Group as PeopleIcon,
   Settings as SettingsIcon,
   Refresh as RefreshIcon,
+  Brightness4 as Brightness4Icon,
+  Brightness7 as Brightness7Icon,
 } from '@mui/icons-material';
 import { triggerCollection } from '../services/api';
+import { useThemeContext } from '../ThemeContext';
 
 const drawerWidth = 240;
 
@@ -33,6 +38,7 @@ const navItems = [
   { text: 'Today', icon: <TodayIcon />, path: '/' },
   { text: 'History', icon: <HistoryIcon />, path: '/history' },
   { text: 'Search', icon: <SearchIcon />, path: '/search' },
+  { text: 'People', icon: <PeopleIcon />, path: '/people' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 
@@ -42,6 +48,7 @@ export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const { darkMode, toggleDarkMode } = useThemeContext();
 
   const handleCollect = async () => {
     setCollecting(true);
@@ -108,6 +115,11 @@ export default function Layout({ children }) {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {navItems.find((i) => i.path === location.pathname)?.text || 'DayToDay'}
           </Typography>
+          <Tooltip title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <IconButton color="inherit" onClick={toggleDarkMode} sx={{ mr: 1 }}>
+              {darkMode ? <Brightness7Icon /> : <Brightness4Icon />}
+            </IconButton>
+          </Tooltip>
           <Button
             color="inherit"
             startIcon={<RefreshIcon />}

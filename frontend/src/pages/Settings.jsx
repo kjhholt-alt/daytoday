@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
   Stack,
   Paper,
-  Button,
+  Chip,
   Alert,
   List,
   ListItem,
@@ -12,69 +12,40 @@ import {
   ListItemIcon,
 } from '@mui/material';
 import {
-  AccountCircle as AccountIcon,
-  Login as LoginIcon,
-  Logout as LogoutIcon,
+  CheckCircle as CheckIcon,
   Folder as FolderIcon,
   Info as InfoIcon,
+  Email as EmailIcon,
+  MenuBook as OneNoteIcon,
+  Cloud as CloudIcon,
+  CalendarMonth as CalendarIcon,
+  Warning as WarningIcon,
+  Computer as ComputerIcon,
 } from '@mui/icons-material';
-import { getAuthStatus, triggerLogin, triggerLogout } from '../services/api';
+import { getStatus } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Settings() {
-  const [authStatus, setAuthStatus] = useState(null);
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [error, setError] = useState(null);
 
-  const fetchAuth = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
-      const res = await getAuthStatus();
-      setAuthStatus(res.data);
+      const res = await getStatus();
+      setStatus(res.data);
+      setError(null);
     } catch (err) {
-      setAuthStatus({ authenticated: false, error: 'Backend not reachable.' });
+      setError('Backend not reachable. Make sure the server is running.');
+      setStatus(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAuth();
   }, []);
 
-  const handleLogin = async () => {
-    setActionLoading(true);
-    setMessage(null);
-    try {
-      await triggerLogin();
-      await fetchAuth();
-      setMessage({ text: 'Logged in successfully!', severity: 'success' });
-    } catch (err) {
-      setMessage({
-        text: err.response?.data?.detail || 'Login failed.',
-        severity: 'error',
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setActionLoading(true);
-    setMessage(null);
-    try {
-      await triggerLogout();
-      await fetchAuth();
-      setMessage({ text: 'Logged out.', severity: 'info' });
-    } catch (err) {
-      setMessage({
-        text: err.response?.data?.detail || 'Logout failed.',
-        severity: 'error',
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
 
   if (loading) return <LoadingSpinner message="Loading settings..." />;
 
@@ -82,58 +53,135 @@ export default function Settings() {
     <Stack spacing={3}>
       <Typography variant="h5">Settings</Typography>
 
-      {message && (
-        <Alert severity={message.severity}>{message.text}</Alert>
-      )}
+      {error && <Alert severity="error">{error}</Alert>}
 
+      {/* Data Sources Status */}
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
-          Microsoft Account
+          Data Sources
         </Typography>
-        {authStatus?.authenticated ? (
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <AccountIcon color="success" />
-              <Box>
-                <Typography variant="body1">
-                  {authStatus.account?.name || 'Signed In'}
-                </Typography>
+        <Stack spacing={2}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <EmailIcon color={status?.outlook_enabled ? 'success' : 'warning'} />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="body1">Outlook Calendar</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {status?.outlook_enabled
+                  ? 'Reading directly from Classic Outlook via COM automation'
+                  : 'Outlook integration disabled'}
+              </Typography>
+            </Box>
+            <Chip
+              icon={status?.outlook_enabled ? <CheckIcon /> : <WarningIcon />}
+              label={status?.outlook_enabled ? 'Active' : 'Disabled'}
+              color={status?.outlook_enabled ? 'success' : 'warning'}
+              size="small"
+              variant="outlined"
+            />
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <OneNoteIcon color={status?.onenote_enabled ? 'success' : 'warning'} />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="body1">OneNote Notes</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Scanning local OneNote backup files for recent pages
+              </Typography>
+            </Box>
+            <Chip
+              icon={status?.onenote_enabled ? <CheckIcon /> : <WarningIcon />}
+              label={status?.onenote_enabled ? 'Active' : 'Disabled'}
+              color={status?.onenote_enabled ? 'success' : 'warning'}
+              size="small"
+              variant="outlined"
+            />
+          </Box>
+
+          {status?.word_doc_directories && status.word_doc_directories.length > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <FolderIcon color="success" />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="body1">Word Documents</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {authStatus.account?.username || ''}
+                  Scanning {status.word_doc_directories.length} folder{status.word_doc_directories.length > 1 ? 's' : ''} for .docx files
                 </Typography>
               </Box>
+              <Chip
+                icon={<CheckIcon />}
+                label="Active"
+                color="success"
+                size="small"
+                variant="outlined"
+              />
             </Box>
-            <Button
-              variant="outlined"
-              color="error"
-              startIcon={<LogoutIcon />}
-              onClick={handleLogout}
-              disabled={actionLoading}
-            >
-              Sign Out
-            </Button>
-          </Stack>
-        ) : (
-          <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">
-              Not signed in. Sign in with your Microsoft account to collect data.
-            </Typography>
-            {authStatus?.error && (
-              <Alert severity="warning" variant="outlined">
-                {authStatus.error}
-              </Alert>
-            )}
-            <Button
-              variant="contained"
-              startIcon={<LoginIcon />}
-              onClick={handleLogin}
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Signing In...' : 'Sign In with Microsoft'}
-            </Button>
-          </Stack>
-        )}
+          )}
+        </Stack>
       </Paper>
+
+      {/* Classic Outlook Requirement */}
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          <CalendarIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+          Calendar Setup
+        </Typography>
+        <Alert severity="info" icon={<ComputerIcon />} sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+            This app requires Classic Outlook (not "New Outlook")
+          </Typography>
+          <Typography variant="body2" component="div">
+            DayToDay reads your calendar directly from the Outlook desktop app using COM automation.
+            This only works with <strong>Classic Outlook</strong>. If you've been switched to "New Outlook"
+            and can't find the toggle to switch back:
+          </Typography>
+          <Box sx={{
+            mt: 1.5, p: 1.5, borderRadius: 1,
+            bgcolor: 'action.hover',
+          }}>
+            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+              How to open Classic Outlook:
+            </Typography>
+            <Typography variant="body2" component="div">
+              <ol style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                <li>Press <strong>Win + R</strong> to open the Run dialog</li>
+                <li>Type <strong>outlook.exe</strong> and press Enter</li>
+                <li>This launches Classic Outlook directly, bypassing the New Outlook toggle</li>
+              </ol>
+            </Typography>
+          </Box>
+          <Typography variant="body2" sx={{ mt: 1.5 }}>
+            Make sure Outlook is running before clicking "Collect Now" in the app.
+            The app will automatically read your meetings, attendees, Teams links, and more.
+          </Typography>
+        </Alert>
+
+        <Alert severity="success" variant="outlined">
+          <Typography variant="body2">
+            <strong>No setup required!</strong> As long as Classic Outlook is running,
+            DayToDay will automatically pull your calendar data when you click "Collect Now".
+            No exports, no URLs, no permissions needed.
+          </Typography>
+        </Alert>
+      </Paper>
+
+      {/* Configured Folders */}
+      {status?.word_doc_directories && status.word_doc_directories.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Configured Folders
+          </Typography>
+          <List dense>
+            {status.word_doc_directories.map((dir, index) => (
+              <ListItem key={index}>
+                <ListItemIcon><FolderIcon /></ListItemIcon>
+                <ListItemText
+                  primary={dir}
+                  secondary="Word documents"
+                />
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
@@ -144,14 +192,14 @@ export default function Settings() {
             <ListItemIcon><InfoIcon /></ListItemIcon>
             <ListItemText
               primary="Version"
-              secondary="1.0.0"
+              secondary={status?.version || '1.0.0'}
             />
           </ListItem>
           <ListItem>
-            <ListItemIcon><FolderIcon /></ListItemIcon>
+            <ListItemIcon><CloudIcon /></ListItemIcon>
             <ListItemText
-              primary="Configuration"
-              secondary="Edit config/config.json to change Azure app settings and Word doc directories."
+              primary="Data Sources"
+              secondary="Outlook Calendar (COM), OneNote (local backup scanning), Word documents (local .docx scanning)"
             />
           </ListItem>
         </List>

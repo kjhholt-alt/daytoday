@@ -1,4 +1,6 @@
 import json
+import os
+import glob as _glob
 import shutil
 import logging
 from pathlib import Path
@@ -10,11 +12,56 @@ CONFIG_DIR = PROJECT_ROOT / 'config'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
 TEMPLATE_FILE = CONFIG_DIR / 'config.template.json'
 
-REQUIRED_KEYS = [
-    'azure_client_id',
-    'azure_authority',
-    'graph_scopes',
-]
+REQUIRED_KEYS = []
+
+
+def _default_onenote_paths() -> list:
+    """
+    Build a list of default directories where OneNote notebooks are commonly
+    stored.  The list is computed at call time so environment variables are
+    resolved on the current Windows machine.
+    """
+    paths: list[str] = []
+
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    if local_app:
+        # 1. OneNote Desktop cache & backup (Office 365 / OneNote 2016+)
+        #    This is where cloud-synced notebooks are cached locally.
+        for subdir in ("Backup", "cache"):
+            onenote_path = os.path.join(
+                local_app, "Microsoft", "OneNote", "16.0", subdir,
+            )
+            if os.path.isdir(onenote_path):
+                paths.append(onenote_path)
+
+        # 2. OneNote UWP (Windows Store) local state
+        uwp_path = os.path.join(
+            local_app,
+            "Packages",
+            "Microsoft.Office.OneNote_8wekyb3d8bbwe",
+            "LocalState",
+        )
+        if os.path.isdir(uwp_path):
+            paths.append(uwp_path)
+
+    # 3. OneDrive directories (may contain synced notebooks)
+    user_profile = os.environ.get("USERPROFILE", "")
+    if user_profile:
+        for entry in _glob.glob(os.path.join(user_profile, "OneDrive*")):
+            if os.path.isdir(entry):
+                paths.append(entry)
+
+    return paths
+
+
+DEFAULT_CONFIG = {
+    'word_doc_directories': [],
+    'recordings_directories': [],
+    'onenote_enabled': True,
+    'onenote_paths': [],          # empty list means "use auto-detected defaults"
+    'outlook_enabled': True,
+    'graph_client_id': '',        # Azure AD app (public client) ID for MS Graph
+}
 
 
 class ConfigError(Exception):
@@ -41,11 +88,18 @@ class ConfigService:
             if TEMPLATE_FILE.exists():
                 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                 shutil.copy(TEMPLATE_FILE, CONFIG_FILE)
-                raise ConfigError(
-                    f"Config created from template at {CONFIG_FILE}. "
-                    "Please edit it with your Azure app details before running."
+                logger.info(
+                    "Config created from template at %s. "
+                    "Please edit it with your Word doc directories.",
+                    CONFIG_FILE,
                 )
-            raise ConfigError(f"No config file found at {CONFIG_FILE}")
+            else:
+                logger.info(
+                    "No config file found at %s. Using default configuration.",
+                    CONFIG_FILE,
+                )
+            self._config = dict(DEFAULT_CONFIG)
+            return
 
         try:
             with open(CONFIG_FILE, 'r') as f:
@@ -53,42 +107,66 @@ class ConfigService:
         except json.JSONDecodeError as e:
             raise ConfigError(f"Invalid JSON in config file: {e}")
 
+        # Merge defaults for any keys not present in the file
+        for key, value in DEFAULT_CONFIG.items():
+            self._config.setdefault(key, value)
+
         self._validate()
         logger.info("Configuration loaded successfully.")
 
     def _validate(self):
-        missing = [k for k in REQUIRED_KEYS if k not in self._config]
-        if missing:
-            raise ConfigError(f"Missing required config keys: {missing}")
-        if self._config.get('azure_client_id') == 'YOUR_AZURE_APP_CLIENT_ID':
+        dirs = self._config.get('word_doc_directories')
+        if dirs is not None and not isinstance(dirs, list):
             raise ConfigError(
-                "Please replace the placeholder azure_client_id in "
-                f"{CONFIG_FILE} with your actual Azure App Client ID."
+                "Config key 'word_doc_directories' must be a list."
+            )
+
+        rec_dirs = self._config.get('recordings_directories')
+        if rec_dirs is not None and not isinstance(rec_dirs, list):
+            raise ConfigError(
+                "Config key 'recordings_directories' must be a list."
+            )
+
+        on_paths = self._config.get('onenote_paths')
+        if on_paths is not None and not isinstance(on_paths, list):
+            raise ConfigError(
+                "Config key 'onenote_paths' must be a list of directory paths."
             )
 
     def get(self, key, default=None):
         return self._config.get(key, default)
 
     @property
-    def client_id(self):
-        return self._config['azure_client_id']
-
-    @property
-    def authority(self):
-        return self._config['azure_authority']
-
-    @property
-    def scopes(self):
-        return self._config['graph_scopes']
-
-    @property
-    def token_cache_path(self):
-        path = self._config.get('token_cache_path', './config/token_cache.bin')
-        resolved = Path(path)
-        if not resolved.is_absolute():
-            resolved = PROJECT_ROOT / path
-        return str(resolved)
-
-    @property
     def word_doc_directories(self):
         return self._config.get('word_doc_directories', [])
+
+    @property
+    def onenote_enabled(self):
+        return self._config.get('onenote_enabled', True)
+
+    @property
+    def recordings_directories(self):
+        return self._config.get('recordings_directories', [])
+
+    @property
+    def onenote_paths(self) -> list:
+        """
+        Return the list of directories to scan for OneNote ``.one`` /
+        ``.onetoc2`` files.
+
+        If the user has not configured any paths (empty list or missing key),
+        fall back to the auto-detected default locations.
+        """
+        configured = self._config.get('onenote_paths', [])
+        if configured:
+            return configured
+        return _default_onenote_paths()
+
+    @property
+    def outlook_enabled(self):
+        return self._config.get('outlook_enabled', True)
+
+    @property
+    def graph_client_id(self):
+        return self._config.get('graph_client_id', '')
+

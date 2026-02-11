@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import date
 
 from django.db.models import Q
@@ -8,6 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from collections import defaultdict
+
 from .models import DailySummary, Meeting, NoteReference, WordDocument
 from .serializers import (
     DailySummaryDetailSerializer,
@@ -16,6 +19,7 @@ from .serializers import (
     NoteReferenceSerializer,
     WordDocumentSerializer,
 )
+from .services.auth_service import GraphAuthService
 
 logger = logging.getLogger(__name__)
 
@@ -107,21 +111,6 @@ class CollectView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Validate auth status
-        try:
-            from .services.auth_service import AuthService
-            auth = AuthService.get_instance()
-            if not auth.is_authenticated():
-                return Response(
-                    {'detail': 'Not authenticated. Please sign in via Settings first.'},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
-        except Exception as e:
-            return Response(
-                {'detail': f'Authentication error: {str(e)}'},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
         target_date_str = request.data.get('date')
         if target_date_str:
             target_date = parse_date(target_date_str)
@@ -147,49 +136,260 @@ class CollectView(APIView):
             )
 
 
-class AuthStatusView(APIView):
+class StatusView(APIView):
+    def get(self, request):
+        # NOTE: COM availability checks are skipped because New Outlook
+        # blocks COM Dispatch() calls indefinitely (holds GIL).
+        # COM status is determined at collection time via try/except.
+        outlook_available = False
+        onenote_available = False
+
+        # Get config info
+        config_info = {
+            'word_doc_directories': [],
+            'outlook_enabled': False,
+            'onenote_enabled': False,
+        }
+        try:
+            from .services.config_service import ConfigService
+            config = ConfigService.get_instance()
+            config_info['word_doc_directories'] = getattr(config, 'word_doc_directories', [])
+            config_info['outlook_enabled'] = getattr(config, 'outlook_enabled', False)
+            config_info['onenote_enabled'] = getattr(config, 'onenote_enabled', False)
+        except Exception:
+            pass
+
+        # Check Graph auth status
+        graph_auth_info = {
+            'graph_enabled': False,
+            'graph_authenticated': False,
+            'graph_account': None,
+        }
+        try:
+            graph_auth = GraphAuthService.get_instance()
+            graph_auth_info['graph_enabled'] = graph_auth.graph_enabled
+            graph_auth_info['graph_authenticated'] = graph_auth.is_authenticated()
+            if graph_auth.is_authenticated():
+                graph_auth_info['graph_account'] = graph_auth.get_account_info()
+        except Exception:
+            pass
+
+        return Response({
+            'outlook_available': outlook_available,
+            'onenote_available': onenote_available,
+            'outlook_enabled': config_info['outlook_enabled'],
+            'onenote_enabled': config_info['onenote_enabled'],
+            'word_doc_directories': config_info['word_doc_directories'],
+            'graph_enabled': graph_auth_info['graph_enabled'],
+            'graph_authenticated': graph_auth_info['graph_authenticated'],
+            'graph_account': graph_auth_info['graph_account'],
+            'version': '1.0.0',
+        })
+
+
+class GraphAuthStatusView(APIView):
+    """GET /api/auth/status/ - Return current Graph authentication state."""
+
     def get(self, request):
         try:
-            from .services.auth_service import AuthService
-            auth = AuthService.get_instance()
+            auth = GraphAuthService.get_instance()
+            accounts = auth.get_accounts()
             return Response({
                 'authenticated': auth.is_authenticated(),
-                'account': auth.get_account_info(),
+                'accounts': [
+                    {
+                        'username': a.get('username', ''),
+                        'name': a.get('name', ''),
+                    }
+                    for a in accounts
+                ],
+                'graph_enabled': auth.graph_enabled,
+                'login_error': auth.login_error,
             })
         except Exception as e:
+            logger.error("Failed to get Graph auth status: %s", e, exc_info=True)
             return Response({
                 'authenticated': False,
-                'account': None,
-                'error': str(e),
+                'accounts': [],
+                'graph_enabled': False,
+                'login_error': None,
             })
 
 
-class AuthLoginView(APIView):
+class GraphAuthLoginView(APIView):
+    """POST /api/auth/login/ - Open browser for interactive Microsoft login."""
+
     def post(self, request):
         try:
-            from .services.auth_service import AuthService
-            auth = AuthService.get_instance()
-            auth.get_access_token()
+            auth = GraphAuthService.get_instance()
+
+            if not auth.graph_enabled:
+                return Response(
+                    {'detail': 'Graph authentication service not available.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            # Run interactive login in a background thread because it blocks
+            # until the user completes sign-in in the browser.  The frontend
+            # polls /api/auth/status/ to detect completion.
+            def _do_interactive_login():
+                try:
+                    auth.login_interactive()
+                except Exception:
+                    logger.error("Interactive login failed.", exc_info=True)
+
+            threading.Thread(target=_do_interactive_login, daemon=True).start()
+
             return Response({
-                'authenticated': True,
-                'account': auth.get_account_info(),
+                'status': 'browser_opened',
+                'message': 'A browser window has been opened. '
+                           'Please sign in with your Microsoft account.',
             })
         except Exception as e:
+            logger.error("Graph login failed: %s", e, exc_info=True)
             return Response(
                 {'detail': f'Login failed: {str(e)}'},
-                status=status.HTTP_401_UNAUTHORIZED,
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
-class AuthLogoutView(APIView):
+class GraphAuthLogoutView(APIView):
+    """POST /api/auth/logout/ - Clear cached Graph tokens."""
+
     def post(self, request):
         try:
-            from .services.auth_service import AuthService
-            auth = AuthService.get_instance()
+            auth = GraphAuthService.get_instance()
             auth.logout()
-            return Response({'detail': 'Logged out successfully.'})
+            return Response({'detail': 'Logged out'})
         except Exception as e:
+            logger.error("Graph logout failed: %s", e, exc_info=True)
             return Response(
                 {'detail': f'Logout failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class SaveConfigView(APIView):
+    """POST /api/config/ - Save configuration values."""
+
+    def post(self, request):
+        import json
+        from .services.config_service import ConfigService, CONFIG_FILE
+
+        try:
+            config = ConfigService.get_instance()
+
+            # Read current config file
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE, 'r') as f:
+                    config_data = json.load(f)
+            else:
+                config_data = {}
+
+            # Update allowed fields
+            allowed = ['word_doc_directories',
+                       'recordings_directories', 'onenote_paths']
+            updated = []
+            for key in allowed:
+                if key in request.data:
+                    config_data[key] = request.data[key]
+                    updated.append(key)
+
+            # Write back
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config_data, f, indent=4)
+
+            # Reset singleton so changes take effect
+            ConfigService.reset()
+
+            return Response({
+                'detail': f'Config updated: {", ".join(updated)}',
+                'updated': updated,
+            })
+        except Exception as e:
+            logger.error("Config save failed: %s", e, exc_info=True)
+            return Response(
+                {'detail': f'Failed to save config: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AttendeeSearchView(APIView):
+    """GET /api/attendees/?q=name -- Search meetings by attendee name/email."""
+
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return Response(
+                {'detail': 'Query parameter "q" is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Search meetings where attendees_json contains the query
+        meetings = Meeting.objects.filter(
+            attendees_json__icontains=query
+        ).select_related('daily_summary').order_by('-start_time')[:50]
+
+        results = []
+        for meeting in meetings:
+            results.append({
+                'id': str(meeting.id),
+                'subject': meeting.subject,
+                'start_time': meeting.start_time.isoformat() if meeting.start_time else '',
+                'end_time': meeting.end_time.isoformat() if meeting.end_time else '',
+                'date': meeting.daily_summary.date.isoformat(),
+                'organizer_name': meeting.organizer_name,
+                'attendee_count': len(meeting.attendees_json) if meeting.attendees_json else 0,
+                'is_online_meeting': meeting.is_online_meeting,
+                'location': meeting.location,
+            })
+
+        return Response({
+            'query': query,
+            'count': len(results),
+            'meetings': results,
+        })
+
+
+class AttendeeTopView(APIView):
+    """GET /api/attendees/top/ -- Return most frequent meeting collaborators."""
+
+    def get(self, request):
+        limit = int(request.query_params.get('limit', 20))
+
+        # Scan all meetings for attendee frequency
+        attendee_counts = defaultdict(lambda: {
+            'name': '', 'email': '', 'meeting_count': 0, 'last_seen': ''
+        })
+
+        meetings = Meeting.objects.all().order_by('-start_time')
+        for meeting in meetings:
+            if not meeting.attendees_json:
+                continue
+            for attendee in meeting.attendees_json:
+                name = attendee.get('name', '')
+                email = attendee.get('email', '')
+                key = email.lower() if email else name.lower()
+                if not key:
+                    continue
+
+                entry = attendee_counts[key]
+                entry['name'] = name or entry['name']
+                entry['email'] = email or entry['email']
+                entry['meeting_count'] += 1
+                meeting_date = meeting.start_time.isoformat() if meeting.start_time else ''
+                if not entry['last_seen'] or meeting_date > entry['last_seen']:
+                    entry['last_seen'] = meeting_date
+
+        # Sort by meeting count descending
+        sorted_attendees = sorted(
+            attendee_counts.values(),
+            key=lambda x: x['meeting_count'],
+            reverse=True,
+        )[:limit]
+
+        return Response({
+            'attendees': sorted_attendees,
+            'total_unique': len(attendee_counts),
+        })

@@ -4,9 +4,13 @@ from .views import (
     DailySummaryViewSet,
     SearchView,
     CollectView,
-    AuthStatusView,
-    AuthLoginView,
-    AuthLogoutView,
+    StatusView,
+    GraphAuthStatusView,
+    GraphAuthLoginView,
+    GraphAuthLogoutView,
+    SaveConfigView,
+    AttendeeSearchView,
+    AttendeeTopView,
 )
 
 router = DefaultRouter()
@@ -16,7 +20,11 @@ urlpatterns = [
     path('', include(router.urls)),
     path('search/', SearchView.as_view(), name='search'),
     path('collect/', CollectView.as_view(), name='collect'),
-    path('auth/status/', AuthStatusView.as_view(), name='auth-status'),
-    path('auth/login/', AuthLoginView.as_view(), name='auth-login'),
-    path('auth/logout/', AuthLogoutView.as_view(), name='auth-logout'),
+    path('status/', StatusView.as_view(), name='status'),
+    path('auth/status/', GraphAuthStatusView.as_view(), name='auth-status'),
+    path('auth/login/', GraphAuthLoginView.as_view(), name='auth-login'),
+    path('auth/logout/', GraphAuthLogoutView.as_view(), name='auth-logout'),
+    path('config/', SaveConfigView.as_view(), name='save-config'),
+    path('attendees/', AttendeeSearchView.as_view(), name='attendee-search'),
+    path('attendees/top/', AttendeeTopView.as_view(), name='attendee-top'),
 ]

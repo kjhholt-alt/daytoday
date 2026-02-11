@@ -111,3 +111,18 @@ class SearchViewTest(TestCase):
         response = self.client.get('/api/search/?q=zzzznonexistent')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['meetings']), 0)
+
+
+class StatusViewTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_status_endpoint(self):
+        response = self.client.get('/api/status/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('outlook_available', response.data)
+        self.assertIn('onenote_available', response.data)
+        self.assertIn('outlook_enabled', response.data)
+        self.assertIn('onenote_enabled', response.data)
+        self.assertIn('word_doc_directories', response.data)
+        self.assertIn('version', response.data)

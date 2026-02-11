@@ -69,6 +69,12 @@ class Transcript(models.Model):
 
 
 class NoteReference(models.Model):
+    CHANGE_TYPE_CHOICES = [
+        ('new', 'New'),
+        ('updated', 'Updated'),
+        ('unchanged', 'Unchanged'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     daily_summary = models.ForeignKey(
         DailySummary, on_delete=models.CASCADE, related_name='note_references'
@@ -78,6 +84,13 @@ class NoteReference(models.Model):
     page_title = models.CharField(max_length=500)
     page_graph_id = models.CharField(max_length=512, blank=True)
     content_snippet = models.TextField(blank=True)
+    content_text = models.TextField(blank=True, default='')
+    changes_summary = models.TextField(blank=True, default='')
+    change_type = models.CharField(
+        max_length=20,
+        choices=CHANGE_TYPE_CHOICES,
+        default='new',
+    )
     web_url = models.URLField(max_length=2000, blank=True)
     last_modified = models.DateTimeField(null=True, blank=True)
 
@@ -104,3 +117,28 @@ class WordDocument(models.Model):
 
     def __str__(self):
         return f"Doc: {self.file_name}"
+
+
+class Recording(models.Model):
+    FILE_TYPE_CHOICES = [
+        ('audio', 'Audio'),
+        ('video', 'Video'),
+        ('transcript', 'Transcript'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    daily_summary = models.ForeignKey(
+        DailySummary, on_delete=models.CASCADE, related_name='recordings'
+    )
+    file_name = models.CharField(max_length=500)
+    file_path = models.CharField(max_length=2000)
+    file_type = models.CharField(max_length=20, choices=FILE_TYPE_CHOICES)
+    transcript_text = models.TextField(blank=True, default='')
+    modified_at = models.DateTimeField(null=True, blank=True)
+    size_bytes = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['-modified_at']
+
+    def __str__(self):
+        return f"Recording: {self.file_name} ({self.file_type})"

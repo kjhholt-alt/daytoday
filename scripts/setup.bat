@@ -42,7 +42,7 @@ echo    Node.js found.
 
 REM Create virtual environment
 echo.
-echo [1/5] Creating virtual environment...
+echo [1/6] Creating virtual environment...
 if not exist "%VENV_DIR%" (
     %PYTHON_CMD% -m venv "%VENV_DIR%"
     echo    Virtual environment created.
@@ -51,27 +51,33 @@ if not exist "%VENV_DIR%" (
 )
 
 REM Install Python dependencies
-echo [2/5] Installing Python dependencies...
+echo [2/6] Installing Python dependencies...
 call "%VENV_DIR%\Scripts\activate.bat"
 pip install -r "%BACKEND_DIR%\requirements.txt" -q
 echo    Python dependencies installed.
 
 REM Install Node.js dependencies
-echo [3/5] Installing frontend dependencies...
+echo [3/6] Installing frontend dependencies...
 cd /d "%FRONTEND_DIR%"
 call npm install --silent 2>nul
 echo    Frontend dependencies installed.
 
+REM Build React frontend
+echo [4/6] Building frontend...
+call node node_modules\react-scripts\bin\react-scripts.js build
+echo    Frontend built.
+
 REM Setup config
-echo [4/5] Setting up configuration...
+echo [5/6] Setting up configuration...
 if not exist "%CONFIG_DIR%\config.json" (
     if exist "%CONFIG_DIR%\config.template.json" (
         copy "%CONFIG_DIR%\config.template.json" "%CONFIG_DIR%\config.json" >nul
         echo    Config file created from template.
         echo.
-        echo    IMPORTANT: Edit config\config.json with your Azure App details:
-        echo      - azure_client_id: Your Azure App Registration Client ID
+        echo    OPTIONAL: Edit config\config.json to configure:
         echo      - word_doc_directories: Paths to scan for Word documents
+        echo      - outlook_enabled: Enable/disable Outlook calendar collection
+        echo      - onenote_enabled: Enable/disable OneNote collection
         echo.
     )
 ) else (
@@ -79,7 +85,7 @@ if not exist "%CONFIG_DIR%\config.json" (
 )
 
 REM Run Django migrations
-echo [5/5] Running database migrations...
+echo [6/6] Running database migrations...
 cd /d "%BACKEND_DIR%"
 python manage.py migrate --run-syncdb -q 2>nul
 python manage.py migrate -q
@@ -90,9 +96,14 @@ echo ========================================
 echo   Setup Complete!
 echo ========================================
 echo.
+echo No Azure setup needed! DayToDay reads directly
+echo from your local Outlook and OneNote.
+echo.
 echo Next steps:
-echo   1. Register an app in Azure Entra ID (see README.md)
-echo   2. Edit config\config.json with your Azure Client ID
-echo   3. Run scripts\daytoday.bat to start the app
+echo   1. Make sure Outlook is open
+echo   2. Run scripts\daytoday.bat to start the app
+echo.
+echo To build a standalone .exe:
+echo   Run scripts\build_exe.bat
 echo.
 pause
