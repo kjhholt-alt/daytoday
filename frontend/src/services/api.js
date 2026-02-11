@@ -40,6 +40,7 @@ export const openNote = (noteId) => api.post(`/notes/${noteId}/open/`);
 // Calendar import (Power Automate)
 export const getCalendarImportStatus = () => api.get('/calendar/import/');
 export const importCalendarEvents = (events, date) => api.post('/calendar/import/', { events, date });
+export const bulkImportCalendar = () => api.post('/calendar/bulk-import/', {}, { timeout: 300000 });
 
 // Attendees
 export const searchAttendees = (query) => api.get(`/attendees/?q=${encodeURIComponent(query)}`);

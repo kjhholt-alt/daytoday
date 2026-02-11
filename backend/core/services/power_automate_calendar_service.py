@@ -233,6 +233,24 @@ class PowerAutomateCalendarService:
         logger.info("PA calendar: wrote %d event(s) to %s", len(events), filepath)
         return filepath
 
+    def list_available_dates(self) -> list[date]:
+        """Return all dates that have a ``calendar_YYYY-MM-DD.json`` file."""
+        if not self.available:
+            return []
+        dates = []
+        for filepath in _glob.glob(os.path.join(self._export_path, "calendar_*.json")):
+            filename = os.path.basename(filepath)
+            if filename == "calendar_events.json":
+                continue
+            # Expect calendar_YYYY-MM-DD.json
+            date_part = filename[len("calendar_"):-len(".json")]
+            try:
+                dates.append(date.fromisoformat(date_part))
+            except ValueError:
+                continue
+        dates.sort()
+        return dates
+
     def get_status(self) -> dict:
         """Return status info for the Settings UI."""
         if not self.available:

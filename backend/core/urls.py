@@ -13,6 +13,7 @@ from .views import (
     AttendeeSearchView,
     AttendeeTopView,
     CalendarImportView,
+    BulkCalendarImportView,
 )
 
 router = DefaultRouter()
@@ -29,6 +30,7 @@ urlpatterns = [
     path('config/', SaveConfigView.as_view(), name='save-config'),
     path('notes/<uuid:note_id>/open/', OpenNoteView.as_view(), name='open-note'),
     path('calendar/import/', CalendarImportView.as_view(), name='calendar-import'),
+    path('calendar/bulk-import/', BulkCalendarImportView.as_view(), name='calendar-bulk-import'),
     path('attendees/', AttendeeSearchView.as_view(), name='attendee-search'),
     path('attendees/top/', AttendeeTopView.as_view(), name='attendee-top'),
 ]

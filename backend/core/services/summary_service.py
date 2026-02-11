@@ -152,6 +152,62 @@ class SummaryService:
         )
         return summary
 
+    @transaction.atomic
+    def bulk_import_pa_calendar(self):
+        """Import all historical PA calendar files at once.
+
+        Scans the export directory for ``calendar_YYYY-MM-DD.json`` files,
+        loads the events, and creates/updates DailySummary records with
+        only meeting data (skips OneNote, Word, recordings).
+
+        Returns a list of ``{date, events, created}`` result dicts.
+        """
+        if not self._pa_calendar or not self._pa_calendar.available:
+            return []
+
+        available_dates = self._pa_calendar.list_available_dates()
+        if not available_dates:
+            return []
+
+        logger.info(
+            "Bulk PA import: found %d date file(s) from %s to %s",
+            len(available_dates), available_dates[0], available_dates[-1],
+        )
+
+        results = []
+        for target_date in available_dates:
+            events = self._pa_calendar.get_events_for_date(target_date)
+
+            summary, created = DailySummary.objects.get_or_create(
+                date=target_date,
+                defaults={'status': 'complete'},
+            )
+
+            # Only replace meetings, leave notes/docs/recordings untouched
+            summary.meetings.all().delete()
+
+            event_count = 0
+            if events:
+                self._store_meetings(summary, events)
+                event_count = len(events)
+
+            summary.summary_text = self._generate_summary_text(summary)
+            summary.status = 'complete'
+            summary.error_message = ''
+            summary.save()
+
+            results.append({
+                'date': target_date.isoformat(),
+                'events': event_count,
+                'created': created,
+            })
+
+        logger.info(
+            "Bulk PA import complete: %d date(s), %d total meeting(s)",
+            len(results), sum(r['events'] for r in results),
+        )
+        return results
+
     def _get_calendar_sources(self, calendar_source: str):
         """Return an ordered list of (name, callable) calendar sources."""
         all_sources = []

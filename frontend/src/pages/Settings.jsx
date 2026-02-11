@@ -36,7 +36,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
-import { getStatus, saveConfig, getCalendarImportStatus } from '../services/api';
+import { getStatus, saveConfig, getCalendarImportStatus, bulkImportCalendar } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const CALENDAR_SOURCE_OPTIONS = [
@@ -63,6 +63,8 @@ export default function Settings() {
   const [paTestResult, setPaTestResult] = useState(null);
   const [paTesting, setPaTesting] = useState(false);
   const [showPaGuide, setShowPaGuide] = useState(false);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -136,6 +138,19 @@ export default function Settings() {
       setPaTestResult({ error: 'Failed to check Power Automate status.' });
     } finally {
       setPaTesting(false);
+    }
+  };
+
+  const handleBulkImport = async () => {
+    setBulkImporting(true);
+    setBulkResult(null);
+    try {
+      const res = await bulkImportCalendar();
+      setBulkResult(res.data);
+    } catch (err) {
+      setBulkResult({ error: err.response?.data?.detail || 'Bulk import failed.' });
+    } finally {
+      setBulkImporting(false);
     }
   };
 
@@ -311,6 +326,43 @@ export default function Settings() {
             {paTestResult?.error && (
               <Alert severity="error" sx={{ mb: 1 }}>{paTestResult.error}</Alert>
             )}
+
+            {/* Bulk import */}
+            <Paper variant="outlined" sx={{ p: 1.5, mb: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                Bulk Import Historical Data
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Import all <code>calendar_YYYY-MM-DD.json</code> files from the export folder at once.
+                Run your historical Power Automate flow first, then click Import.
+              </Typography>
+              <Button
+                variant="contained"
+                size="small"
+                color="secondary"
+                onClick={handleBulkImport}
+                disabled={bulkImporting}
+              >
+                {bulkImporting ? 'Importing... (this may take a minute)' : 'Import All Historical Files'}
+              </Button>
+              {bulkResult && !bulkResult.error && (
+                <Alert severity="success" sx={{ mt: 1 }}>
+                  <Typography variant="body2">
+                    Imported <strong>{bulkResult.total_events}</strong> event(s)
+                    across <strong>{bulkResult.dates_processed}</strong> date(s)
+                    ({bulkResult.new_dates} new).
+                  </Typography>
+                </Alert>
+              )}
+              {bulkResult?.error && (
+                <Alert severity="error" sx={{ mt: 1 }}>{bulkResult.error}</Alert>
+              )}
+              {bulkResult && !bulkResult.error && bulkResult.dates_processed === 0 && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  No <code>calendar_YYYY-MM-DD.json</code> files found. Run your historical Power Automate flow first.
+                </Alert>
+              )}
+            </Paper>
 
             {/* Setup guide toggle */}
             <Button

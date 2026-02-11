@@ -440,6 +440,41 @@ class CalendarImportView(APIView):
         return Response(pa_service.get_status())
 
 
+class BulkCalendarImportView(APIView):
+    """POST /api/calendar/bulk-import/ - Import all historical PA calendar files."""
+
+    def post(self, request):
+        try:
+            from .services.summary_service import SummaryService
+            service = SummaryService()
+            results = service.bulk_import_pa_calendar()
+
+            if not results:
+                return Response({
+                    'detail': 'No calendar files found in the export folder.',
+                    'dates_processed': 0,
+                    'total_events': 0,
+                    'results': [],
+                })
+
+            total_events = sum(r['events'] for r in results)
+            new_dates = sum(1 for r in results if r['created'])
+
+            return Response({
+                'detail': f'Imported {total_events} event(s) across {len(results)} date(s) ({new_dates} new)',
+                'dates_processed': len(results),
+                'total_events': total_events,
+                'new_dates': new_dates,
+                'results': results,
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            logger.error("Bulk calendar import failed: %s", e, exc_info=True)
+            return Response(
+                {'detail': f'Bulk import failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class AttendeeSearchView(APIView):
     """GET /api/attendees/?q=name -- Search meetings by attendee name/email."""
 
