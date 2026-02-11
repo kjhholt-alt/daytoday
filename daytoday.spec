@@ -63,7 +63,6 @@ a = Analysis(
         'core.services',
         'core.services.config_service',
         'core.services.summary_service',
-        'core.services.win32_outlook_service',
         'core.services.win32_onenote_service',
         'core.services.word_service',
         'core.services.recording_service',
@@ -93,6 +92,9 @@ a = Analysis(
         'dateutil.parser',
         # dotenv
         'dotenv',
+        # MSAL (Graph API auth)
+        'msal',
+        'msal_extensions',
         # PyPDF2
         'PyPDF2',
     ],
@@ -109,11 +111,10 @@ a = Analysis(
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
-    ,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, )
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,

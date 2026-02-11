@@ -2,12 +2,10 @@
 Microsoft Graph API Calendar Service.
 
 Retrieves calendar events via the Microsoft Graph REST API and returns them
-in the exact same normalized dict format as OutlookCalendarService, so that
-SummaryService._store_meetings() can consume them without any changes.
+in the normalized dict format expected by SummaryService._store_meetings().
 
-This service is intended as a fallback when Outlook COM automation is not
-available -- for example, when the user is running the New Outlook which
-does not expose a COM interface.
+Works with any version of Outlook (Classic, New, or Web) since it reads
+calendar data from Microsoft 365 via Graph API rather than local COM.
 """
 
 import logging
@@ -40,8 +38,6 @@ class GraphCalendarService:
     """
     Reads calendar events from Microsoft Graph API and returns them in the
     normalized dict format expected by SummaryService._store_meetings().
-
-    The output format is identical to OutlookCalendarService.get_events_for_date().
     """
 
     def __init__(self, auth_service):
@@ -196,10 +192,7 @@ class GraphCalendarService:
     def _normalize_event(self, raw_event):
         """
         Convert a single raw Graph API event dict into the normalized format
-        that matches OutlookCalendarService._normalize_appointment().
-
-        The output dict has exactly the same keys and value types so that
-        SummaryService._store_meetings() works without changes.
+        expected by SummaryService._store_meetings().
         """
         # --- Basic fields ---------------------------------------------------
         graph_id = raw_event.get("id", "")

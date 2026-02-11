@@ -85,39 +85,23 @@ class WordServiceTest(TestCase):
         self.assertEqual(docs[0]['file_name'], 'new.docx')
 
 
-class OutlookCalendarServiceTest(TestCase):
+class GraphCalendarServiceTest(TestCase):
     def test_extract_teams_url(self):
-        from core.services.win32_outlook_service import OutlookCalendarService
-
-        service = OutlookCalendarService()
+        from core.services.graph_calendar_service import GraphCalendarService
 
         body_with_url = (
             "Join the meeting:\n"
             "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc123/0\n"
             "Or call in by phone..."
         )
-        url = service._extract_teams_url(body_with_url)
+        url = GraphCalendarService._extract_teams_url(body_with_url)
         self.assertIn('teams.microsoft.com', url)
 
     def test_extract_teams_url_no_match(self):
-        from core.services.win32_outlook_service import OutlookCalendarService
+        from core.services.graph_calendar_service import GraphCalendarService
 
-        service = OutlookCalendarService()
-        self.assertEqual(service._extract_teams_url('No teams link here'), '')
-        self.assertEqual(service._extract_teams_url(''), '')
-
-    def test_com_datetime_to_iso(self):
-        from core.services.win32_outlook_service import OutlookCalendarService
-
-        result = OutlookCalendarService._com_datetime_to_iso(
-            datetime(2025, 6, 15, 9, 30, 0)
-        )
-        self.assertEqual(result, '2025-06-15T09:30:00+00:00')
-
-    def test_com_datetime_to_iso_none(self):
-        from core.services.win32_outlook_service import OutlookCalendarService
-
-        self.assertEqual(OutlookCalendarService._com_datetime_to_iso(None), '')
+        self.assertEqual(GraphCalendarService._extract_teams_url('No teams link here'), '')
+        self.assertEqual(GraphCalendarService._extract_teams_url(''), '')
 
 
 class ConfigServiceTest(TestCase):

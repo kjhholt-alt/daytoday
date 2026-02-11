@@ -66,7 +66,6 @@ DEFAULT_CONFIG = {
     'onenote_paths': [],          # empty list means "use auto-detected defaults"
     'onenote_notebooks': [],      # empty list means "include all notebooks"
     'outlook_enabled': True,
-    'graph_client_id': '',        # Azure AD app (public client) ID for MS Graph
 }
 
 

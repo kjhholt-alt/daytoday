@@ -8,7 +8,6 @@ from ..models import (
     DailySummary, Meeting, NoteReference, WordDocument, Recording,
 )
 from .config_service import ConfigService
-from .win32_outlook_service import OutlookCalendarService
 from .win32_onenote_service import OneNoteLocalService
 from .word_service import WordService
 from .recording_service import RecordingService
@@ -23,23 +22,19 @@ class SummaryService:
     def __init__(self):
         self._config = ConfigService.get_instance()
 
-        self._calendar = None
-        if self._config.outlook_enabled:
-            self._calendar = OutlookCalendarService()
-
         self._onenote = None
         if self._config.onenote_enabled:
             self._onenote = OneNoteLocalService()
 
-        # Graph API auth (optional - only if graph_client_id configured and authenticated)
-        self._graph_auth = None
+        # Graph API auth -- always initialised (built-in client ID requires
+        # no Azure app registration).  Calendar and OneNote Graph services
+        # are created when the user has authenticated at least once.
+        self._graph_auth = GraphAuthService.get_instance()
         self._graph_calendar = None
         self._graph_onenote = None
-        if self._config.get('graph_client_id'):
-            self._graph_auth = GraphAuthService.get_instance()
-            if self._graph_auth.is_authenticated():
-                self._graph_calendar = GraphCalendarService(self._graph_auth)
-                self._graph_onenote = GraphOneNoteService(self._graph_auth)
+        if self._graph_auth.is_authenticated():
+            self._graph_calendar = GraphCalendarService(self._graph_auth)
+            self._graph_onenote = GraphOneNoteService(self._graph_auth)
 
         self._word = WordService(self._config.word_doc_directories)
         self._recordings = RecordingService(self._config.recordings_directories)
@@ -67,35 +62,23 @@ class SummaryService:
 
         errors = []
 
-        # 1. Calendar events  (priority: COM > Graph API)
-        #    COM via Classic Outlook gives full data with no auth required.
-        #    Graph API is fallback but requires admin consent in many orgs.
-        calendar_done = False
-
-        # Try COM (Classic Outlook) first - gives most complete data
-        if self._calendar:
-            try:
-                events = self._calendar.get_events_for_date(target_date)
-                if events:
-                    self._store_meetings(summary, events)
-                    logger.info(f"Stored {len(events)} meeting(s) via COM.")
-                    calendar_done = True
-            except Exception as e:
-                logger.warning(f"COM calendar failed: {e}")
-
-        # Try Graph API as fallback
-        if self._graph_calendar and not calendar_done:
+        # 1. Calendar events via Microsoft Graph API
+        if self._config.outlook_enabled and self._graph_calendar:
             try:
                 events = self._graph_calendar.get_events_for_date(target_date)
                 if events:
                     self._store_meetings(summary, events)
                     logger.info(f"Stored {len(events)} meeting(s) via Graph API.")
-                    calendar_done = True
             except Exception as e:
                 logger.error(f"Graph calendar failed: {e}", exc_info=True)
-
-        if not calendar_done:
-            logger.info("Calendar collection: no source available or all returned empty.")
+                errors.append(f"Calendar: {e}")
+        elif self._config.outlook_enabled:
+            logger.warning(
+                "Calendar enabled but Graph API not authenticated. "
+                "Sign in via Settings to collect calendar events."
+            )
+        else:
+            logger.info("Calendar collection disabled in config.")
 
         # 2. OneNote pages
         if self._onenote:
