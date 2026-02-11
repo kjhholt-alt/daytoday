@@ -10,6 +10,7 @@ Single-entry-point script that:
 
 import os
 import sys
+import socket
 import threading
 import time
 import webbrowser
@@ -17,7 +18,9 @@ import logging
 from pathlib import Path
 
 # Determine base directory - handles both normal and PyInstaller frozen mode
-if getattr(sys, 'frozen', False):
+FROZEN = getattr(sys, 'frozen', False)
+
+if FROZEN:
     # Running as PyInstaller bundle
     BASE_DIR = Path(sys._MEIPASS)
     # User data directory for database and config (writable location)
@@ -44,12 +47,16 @@ backend_dir = str(BASE_DIR / 'backend')
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(name)s %(message)s',
-)
+# Set up logging — only use basicConfig for the launcher logger;
+# Django's LOGGING config handles everything else after django.setup().
 logger = logging.getLogger('daytoday.launcher')
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s %(message)s'
+    ))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 # Server configuration
 HOST = '127.0.0.1'
@@ -99,25 +106,75 @@ def collect_today_data():
 
 
 def open_browser():
-    """Open the default web browser after a short delay."""
-    time.sleep(1.5)
+    """Open the default web browser once the server is actually ready."""
+    max_wait = 30  # seconds
+    start = time.time()
+    while time.time() - start < max_wait:
+        try:
+            with socket.create_connection((HOST, PORT), timeout=1):
+                break
+        except (ConnectionRefusedError, OSError):
+            time.sleep(0.5)
+    else:
+        logger.warning("Server did not start within %ds — opening browser anyway.", max_wait)
+    # Small extra delay for Django to finish binding
+    time.sleep(0.5)
     logger.info(f"Opening browser at {URL}")
     webbrowser.open(URL)
 
 
 def run_server():
-    """Start the Django development server."""
-    from django.core.management import call_command
+    """Start the server.
 
-    # Pre-check: verify WSGI app loads before starting server
+    In frozen (PyInstaller) mode we use wsgiref.simple_server because
+    Django's ``runserver`` management command fails to re-import the WSGI
+    module inside the PyInstaller bundle.  In development mode we continue
+    to use Django's ``runserver`` for auto-reload and nicer output.
+    """
+    if FROZEN:
+        run_server_wsgiref()
+    else:
+        run_server_django()
+
+
+def run_server_wsgiref():
+    """Serve the Django WSGI app using Python's stdlib wsgiref."""
+    from wsgiref.simple_server import make_server, WSGIRequestHandler
+    from django.contrib.staticfiles.handlers import StaticFilesHandler
+    from daytoday_project.wsgi import application
+
+    # Wrap with static files handler so React build assets are served
+    handler = StaticFilesHandler(application)
+
+    # Quieter request logging — only log errors
+    class QuietHandler(WSGIRequestHandler):
+        def log_message(self, format, *args):
+            # Only log 4xx/5xx responses
+            if args and isinstance(args[0], str) and len(args) >= 2:
+                try:
+                    status = int(str(args[1]).split()[0])
+                    if status >= 400:
+                        logger.warning(format % args)
+                    return
+                except (ValueError, IndexError):
+                    pass
+            logger.debug(format % args)
+
+    server = make_server(HOST, PORT, handler, handler_class=QuietHandler)
+    logger.info(f"Starting DayToDay server at {URL}")
+    logger.info("Press Ctrl+C to stop.")
+
     try:
-        from daytoday_project.wsgi import application  # noqa: F401
-    except Exception as e:
-        logger.error("WSGI pre-check failed: %s", e, exc_info=True)
-        raise RuntimeError(
-            f"Could not load WSGI application: {e}\n"
-            f"This usually means a Python package is missing."
-        )
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+def run_server_django():
+    """Serve via Django's runserver command (development mode)."""
+    from django.core.management import call_command
 
     logger.info(f"Starting DayToDay server at {URL}")
     logger.info("Press Ctrl+C to stop.")

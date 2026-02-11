@@ -8,9 +8,17 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-CONFIG_DIR = PROJECT_ROOT / 'config'
+
+# In frozen (PyInstaller) mode, use the writable user data directory for
+# config so it persists between runs.  The template still lives inside the
+# bundle.
+_DATA_DIR = os.environ.get('DAYTODAY_DATA_DIR', '')
+if _DATA_DIR:
+    CONFIG_DIR = Path(_DATA_DIR) / 'config'
+else:
+    CONFIG_DIR = PROJECT_ROOT / 'config'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
-TEMPLATE_FILE = CONFIG_DIR / 'config.template.json'
+TEMPLATE_FILE = PROJECT_ROOT / 'config' / 'config.template.json'
 
 REQUIRED_KEYS = []
 

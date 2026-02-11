@@ -31,14 +31,11 @@ import {
 import dayjs from 'dayjs';
 import { search, openNote } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
-import NoteDetailDialog from '../components/NoteDetailDialog';
 
 function NoteSearchItem({ note, searchQuery }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [highlightText, setHighlightText] = useState('');
   const hasContent = note.content_snippet && note.content_snippet.trim().length > 0;
 
   const handleOpenNote = async (e) => {
@@ -60,11 +57,6 @@ function NoteSearchItem({ note, searchQuery }) {
     setExpanded(!expanded);
   };
 
-  const handleLineClick = (lineText) => {
-    setHighlightText(lineText);
-    setDialogOpen(true);
-  };
-
   const noteDate = note.daily_summary?.date;
 
   const renderContentLines = () => {
@@ -74,7 +66,7 @@ function NoteSearchItem({ note, searchQuery }) {
       <Typography
         key={i}
         variant="body2"
-        onClick={(e) => { e.stopPropagation(); handleLineClick(line.trim()); }}
+        onClick={(e) => { e.stopPropagation(); handleOpenNote(e); }}
         sx={{
           cursor: 'pointer',
           py: 0.3,
@@ -162,12 +154,6 @@ function NoteSearchItem({ note, searchQuery }) {
           </Collapse>
         )}
       </ListItem>
-      <NoteDetailDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        note={note}
-        highlightText={highlightText}
-      />
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}

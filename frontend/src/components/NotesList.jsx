@@ -23,7 +23,6 @@ import {
   OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import { openNote } from '../services/api';
-import NoteDetailDialog from './NoteDetailDialog';
 
 function getChangeChip(changeType) {
   if (changeType === 'new') {
@@ -56,8 +55,6 @@ function getChangeChip(changeType) {
 function NoteItem({ note }) {
   const [expanded, setExpanded] = useState(false);
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [highlightText, setHighlightText] = useState('');
   const hasContent = note.content_snippet && note.content_snippet.trim().length > 0;
 
   const handleOpenNote = async (e) => {
@@ -81,12 +78,7 @@ function NoteItem({ note }) {
     }
   };
 
-  const handleLineClick = (lineText) => {
-    setHighlightText(lineText);
-    setDialogOpen(true);
-  };
-
-  // Render content lines as clickable items
+  // Render content lines — clicking opens OneNote
   const renderContentLines = () => {
     if (!note.content_snippet) return null;
     const lines = note.content_snippet.split('\n').filter((l) => l.trim());
@@ -94,7 +86,7 @@ function NoteItem({ note }) {
       <Typography
         key={i}
         variant="body2"
-        onClick={(e) => { e.stopPropagation(); handleLineClick(line.trim()); }}
+        onClick={(e) => { e.stopPropagation(); handleOpenNote(e); }}
         sx={{
           cursor: 'pointer',
           py: 0.3,
@@ -212,12 +204,6 @@ function NoteItem({ note }) {
           </Collapse>
         )}
       </ListItem>
-      <NoteDetailDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        note={note}
-        highlightText={highlightText}
-      />
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}

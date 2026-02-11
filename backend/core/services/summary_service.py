@@ -150,24 +150,36 @@ class SummaryService:
         )
         return summary
 
+    @staticmethod
+    def _is_valid_datetime(value):
+        """Check if a value is a usable datetime string or object."""
+        if not value:
+            return False
+        s = str(value).strip()
+        # Must be at least "YYYY-MM-DD" (10 chars) and start with a digit
+        return len(s) >= 10 and s[0].isdigit()
+
     def _store_meetings(self, summary, events):
         meetings = []
         for event in events:
+            start = event.get('start_time')
+            end = event.get('end_time')
             # Skip events with empty/invalid start or end times
-            if not event.get('start_time') or not event.get('end_time'):
+            if not self._is_valid_datetime(start) or not self._is_valid_datetime(end):
                 logger.warning(
-                    "Skipping event '%s' — missing start/end time.",
-                    event.get('subject', '?'),
+                    "Skipping event '%s' — missing or invalid start/end time "
+                    "(start=%r, end=%r).",
+                    event.get('subject', '?'), start, end,
                 )
                 continue
             meetings.append(Meeting(
                 daily_summary=summary,
                 graph_event_id=event['graph_id'],
                 subject=event['subject'],
-                start_time=event['start_time'],
-                end_time=event['end_time'],
+                start_time=start,
+                end_time=end,
                 organizer_name=event['organizer_name'],
-                organizer_email=event['organizer_email'],
+                organizer_email=event.get('organizer_email', ''),
                 attendees_json=event['attendees'],
                 body_preview=event['body_preview'],
                 location=event['location'],
