@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import (
     DailySummary, Meeting, Transcript, NoteReference, WordDocument, Recording,
+    ActionItem,
 )
 
 
@@ -61,6 +62,16 @@ class RecordingSerializer(serializers.ModelSerializer):
         ]
 
 
+class ActionItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ActionItem
+        fields = [
+            'id', 'daily_summary', 'meeting', 'text', 'completed',
+            'priority', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
 class DailySummaryListSerializer(serializers.ModelSerializer):
     meeting_count = serializers.IntegerField(
         source='meetings.count', read_only=True
@@ -89,6 +100,7 @@ class DailySummaryDetailSerializer(serializers.ModelSerializer):
     note_references = NoteReferenceSerializer(many=True, read_only=True)
     word_documents = WordDocumentSerializer(many=True, read_only=True)
     recordings = RecordingSerializer(many=True, read_only=True)
+    action_items = ActionItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = DailySummary
@@ -96,5 +108,5 @@ class DailySummaryDetailSerializer(serializers.ModelSerializer):
             'id', 'date', 'status', 'summary_text', 'notes',
             'error_message', 'created_at', 'updated_at',
             'meetings', 'note_references', 'word_documents',
-            'recordings',
+            'recordings', 'action_items',
         ]

@@ -142,3 +142,34 @@ class Recording(models.Model):
 
     def __str__(self):
         return f"Recording: {self.file_name} ({self.file_type})"
+
+
+class ActionItem(models.Model):
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    daily_summary = models.ForeignKey(
+        DailySummary, on_delete=models.CASCADE, related_name='action_items'
+    )
+    meeting = models.ForeignKey(
+        Meeting, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='action_items'
+    )
+    text = models.TextField()
+    completed = models.BooleanField(default=False)
+    priority = models.CharField(
+        max_length=10, choices=PRIORITY_CHOICES, default='medium'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['completed', '-priority', '-created_at']
+
+    def __str__(self):
+        status = 'Done' if self.completed else 'Open'
+        return f"[{status}] {self.text[:50]}"

@@ -20,6 +20,8 @@ import WordDocPreview from '../components/WordDocPreview';
 import LoadingSpinner from '../components/LoadingSpinner';
 import NextUpBanner from '../components/NextUpBanner';
 import QuickStatsBar from '../components/QuickStatsBar';
+import ActionItemsPanel from '../components/ActionItemsPanel';
+import ExportButton from '../components/ExportButton';
 
 // Simple markdown-to-HTML converter for our structured summary text
 function simpleMarkdown(text) {
@@ -192,6 +194,7 @@ export default function DailySummary() {
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">
           <StatusBadge status={summary.status} />
+          <ExportButton summary={summary} displayDate={displayDate} />
           <Button
             size="small"
             variant="outlined"
@@ -251,6 +254,13 @@ export default function DailySummary() {
       {summary.word_documents && summary.word_documents.length > 0 && (
         <WordDocPreview documents={summary.word_documents} />
       )}
+
+      {/* Action Items */}
+      <ActionItemsPanel
+        summaryId={summary.id}
+        items={summary.action_items || []}
+        onUpdate={fetchSummary}
+      />
 
       {summary.summary_text && (
         <Paper variant="outlined" sx={{ p: 2 }}>

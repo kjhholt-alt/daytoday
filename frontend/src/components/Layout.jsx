@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -28,6 +28,7 @@ import {
   Refresh as RefreshIcon,
   Brightness4 as Brightness4Icon,
   Brightness7 as Brightness7Icon,
+  TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
 import { triggerCollection } from '../services/api';
 import { useThemeContext } from '../ThemeContext';
@@ -36,6 +37,7 @@ const drawerWidth = 240;
 
 const navItems = [
   { text: 'Today', icon: <TodayIcon />, path: '/' },
+  { text: 'Weekly Recap', icon: <TrendingUpIcon />, path: '/weekly' },
   { text: 'History', icon: <HistoryIcon />, path: '/history' },
   { text: 'Search', icon: <SearchIcon />, path: '/search' },
   { text: 'People', icon: <PeopleIcon />, path: '/people' },
@@ -49,6 +51,19 @@ export default function Layout({ children }) {
   const [collecting, setCollecting] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const { darkMode, toggleDarkMode } = useThemeContext();
+
+  // Keyboard shortcut: Ctrl+K / Cmd+K to focus search
+  const handleKeyDown = useCallback((e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      navigate('/search');
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   const handleCollect = async () => {
     setCollecting(true);

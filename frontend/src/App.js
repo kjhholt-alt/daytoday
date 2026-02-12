@@ -8,6 +8,7 @@ import History from './pages/History';
 import Search from './pages/Search';
 import Settings from './pages/Settings';
 import People from './pages/People';
+import WeeklyRecap from './pages/WeeklyRecap';
 import ThemeContext from './ThemeContext';
 
 function getInitialDarkMode() {
@@ -61,6 +62,7 @@ function App() {
                 <Route path="/" element={<DailySummary />} />
                 <Route path="/day/:date" element={<DailySummary />} />
                 <Route path="/history" element={<History />} />
+                <Route path="/weekly" element={<WeeklyRecap />} />
                 <Route path="/search" element={<Search />} />
                 <Route path="/people" element={<People />} />
                 <Route path="/settings" element={<Settings />} />

@@ -46,3 +46,18 @@ export const bulkImportCalendar = () => api.post('/calendar/bulk-import/', {}, {
 export const searchAttendees = (query) => api.get(`/attendees/?q=${encodeURIComponent(query)}`);
 export const getTopAttendees = (limit = 20) => api.get(`/attendees/top/?limit=${limit}`);
 
+// Weekly Recap
+export const getWeeklyRecap = (date) => api.get(`/weekly/${date ? `?date=${date}` : ''}`);
+
+// Action Items
+export const getActionItems = (params = {}) => {
+  const qs = new URLSearchParams(params).toString();
+  return api.get(`/action-items/${qs ? `?${qs}` : ''}`);
+};
+export const createActionItem = (data) => api.post('/action-items/', data);
+export const updateActionItem = (id, data) => api.patch(`/action-items/${id}/`, data);
+export const deleteActionItem = (id) => api.delete(`/action-items/${id}/`);
+
+// Calendar Heatmap
+export const getHeatmap = (months = 3) => api.get(`/heatmap/?months=${months}`);
+

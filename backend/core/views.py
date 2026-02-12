@@ -1,6 +1,7 @@
 import logging
 import threading
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 
 from django.db.models import Q
 from django.utils.dateparse import parse_date
@@ -9,10 +10,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from collections import defaultdict
-
-from .models import DailySummary, Meeting, NoteReference, WordDocument
+from .models import DailySummary, Meeting, NoteReference, WordDocument, ActionItem
 from .serializers import (
+    ActionItemSerializer,
     DailySummaryDetailSerializer,
     DailySummaryListSerializer,
     MeetingSerializer,
@@ -552,4 +552,199 @@ class AttendeeTopView(APIView):
         return Response({
             'attendees': sorted_attendees,
             'total_unique': len(attendee_counts),
+        })
+
+
+class WeeklyRecapView(APIView):
+    """GET /api/weekly/?date=YYYY-MM-DD -- Weekly summary stats."""
+
+    def get(self, request):
+        date_str = request.query_params.get('date')
+        if date_str:
+            ref_date = parse_date(date_str)
+            if not ref_date:
+                return Response(
+                    {'detail': 'Invalid date format. Use YYYY-MM-DD.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            ref_date = date.today()
+
+        # Calculate Monday-Friday of the week containing ref_date
+        week_start = ref_date - timedelta(days=ref_date.weekday())  # Monday
+        week_end = week_start + timedelta(days=6)  # Sunday
+
+        summaries = DailySummary.objects.filter(
+            date__gte=week_start, date__lte=week_end
+        ).prefetch_related('meetings', 'note_references', 'word_documents', 'action_items')
+
+        days = []
+        total_meetings = 0
+        total_meeting_minutes = 0
+        total_notes = 0
+        total_docs = 0
+        all_attendees = defaultdict(lambda: {'name': '', 'email': '', 'count': 0})
+        total_action_items = 0
+        completed_action_items = 0
+
+        for day_offset in range(7):
+            current_date = week_start + timedelta(days=day_offset)
+            summary = next((s for s in summaries if s.date == current_date), None)
+
+            day_data = {
+                'date': current_date.isoformat(),
+                'weekday': current_date.strftime('%A'),
+                'has_data': summary is not None,
+                'meeting_count': 0,
+                'meeting_minutes': 0,
+                'note_count': 0,
+                'doc_count': 0,
+                'action_item_count': 0,
+                'completed_action_items': 0,
+            }
+
+            if summary:
+                meetings = list(summary.meetings.all())
+                day_data['meeting_count'] = len(meetings)
+                total_meetings += len(meetings)
+
+                for m in meetings:
+                    if m.start_time and m.end_time:
+                        diff = (m.end_time - m.start_time).total_seconds() / 60
+                        day_data['meeting_minutes'] += int(diff)
+                        total_meeting_minutes += int(diff)
+
+                    if m.attendees_json:
+                        for a in m.attendees_json:
+                            key = (a.get('email') or a.get('name', '')).lower()
+                            if key:
+                                all_attendees[key]['name'] = a.get('name', '') or all_attendees[key]['name']
+                                all_attendees[key]['email'] = a.get('email', '') or all_attendees[key]['email']
+                                all_attendees[key]['count'] += 1
+
+                notes = list(summary.note_references.all())
+                day_data['note_count'] = len(notes)
+                total_notes += len(notes)
+
+                docs = list(summary.word_documents.all())
+                day_data['doc_count'] = len(docs)
+                total_docs += len(docs)
+
+                items = list(summary.action_items.all())
+                day_data['action_item_count'] = len(items)
+                day_data['completed_action_items'] = sum(1 for i in items if i.completed)
+                total_action_items += len(items)
+                completed_action_items += day_data['completed_action_items']
+
+            days.append(day_data)
+
+        top_collaborators = sorted(
+            all_attendees.values(), key=lambda x: x['count'], reverse=True
+        )[:10]
+
+        return Response({
+            'week_start': week_start.isoformat(),
+            'week_end': week_end.isoformat(),
+            'days': days,
+            'totals': {
+                'meetings': total_meetings,
+                'meeting_minutes': total_meeting_minutes,
+                'notes': total_notes,
+                'documents': total_docs,
+                'action_items': total_action_items,
+                'completed_action_items': completed_action_items,
+                'unique_collaborators': len(all_attendees),
+            },
+            'top_collaborators': top_collaborators,
+        })
+
+
+class ActionItemListCreateView(APIView):
+    """GET/POST /api/action-items/ -- List or create action items."""
+
+    def get(self, request):
+        date_str = request.query_params.get('date')
+        show_open = request.query_params.get('open')
+
+        items = ActionItem.objects.select_related('daily_summary', 'meeting')
+
+        if date_str:
+            parsed = parse_date(date_str)
+            if parsed:
+                items = items.filter(daily_summary__date=parsed)
+
+        if show_open == 'true':
+            items = items.filter(completed=False)
+
+        items = items[:100]
+        serializer = ActionItemSerializer(items, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = ActionItemSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ActionItemDetailView(APIView):
+    """PATCH/DELETE /api/action-items/<uuid>/ -- Update or delete an action item."""
+
+    def patch(self, request, item_id):
+        try:
+            item = ActionItem.objects.get(id=item_id)
+        except ActionItem.DoesNotExist:
+            return Response(
+                {'detail': 'Action item not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ActionItemSerializer(item, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, item_id):
+        try:
+            item = ActionItem.objects.get(id=item_id)
+        except ActionItem.DoesNotExist:
+            return Response(
+                {'detail': 'Action item not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CalendarHeatmapView(APIView):
+    """GET /api/heatmap/?months=3 -- Return daily activity counts for heatmap."""
+
+    def get(self, request):
+        months = int(request.query_params.get('months', 3))
+        end_date = date.today()
+        start_date = end_date - timedelta(days=months * 30)
+
+        summaries = DailySummary.objects.filter(
+            date__gte=start_date, date__lte=end_date
+        ).prefetch_related('meetings', 'note_references', 'word_documents')
+
+        data = []
+        for s in summaries:
+            meeting_count = s.meetings.count()
+            note_count = s.note_references.count()
+            doc_count = s.word_documents.count()
+            data.append({
+                'date': s.date.isoformat(),
+                'meeting_count': meeting_count,
+                'note_count': note_count,
+                'doc_count': doc_count,
+                'total': meeting_count + note_count + doc_count,
+            })
+
+        return Response({
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'days': data,
         })

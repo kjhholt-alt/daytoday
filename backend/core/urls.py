@@ -14,6 +14,10 @@ from .views import (
     AttendeeTopView,
     CalendarImportView,
     BulkCalendarImportView,
+    WeeklyRecapView,
+    ActionItemListCreateView,
+    ActionItemDetailView,
+    CalendarHeatmapView,
 )
 
 router = DefaultRouter()
@@ -33,4 +37,8 @@ urlpatterns = [
     path('calendar/bulk-import/', BulkCalendarImportView.as_view(), name='calendar-bulk-import'),
     path('attendees/', AttendeeSearchView.as_view(), name='attendee-search'),
     path('attendees/top/', AttendeeTopView.as_view(), name='attendee-top'),
+    path('weekly/', WeeklyRecapView.as_view(), name='weekly-recap'),
+    path('action-items/', ActionItemListCreateView.as_view(), name='action-items'),
+    path('action-items/<uuid:item_id>/', ActionItemDetailView.as_view(), name='action-item-detail'),
+    path('heatmap/', CalendarHeatmapView.as_view(), name='calendar-heatmap'),
 ]

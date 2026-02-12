@@ -19,6 +19,7 @@ import dayjs from 'dayjs';
 import { getHistory } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import CalendarHeatmap from '../components/CalendarHeatmap';
 
 export default function History() {
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ export default function History() {
   return (
     <Stack spacing={2}>
       <Typography variant="h5">History</Typography>
+      <CalendarHeatmap />
       {summaries.map((s) => (
         <Card key={s.id} variant="outlined">
           <CardActionArea onClick={() => navigate(`/day/${s.date}`)}>
